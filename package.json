@@ -1,0 +1,19 @@
+{
+  "name": "zhiyi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "知衣 · 以衣橱管理为主干的智能穿搭助手（monorepo）",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "server:dev": "pnpm --filter @zhiyi/server start:dev",
+    "server:build": "pnpm --filter @zhiyi/server build",
+    "shared:build": "pnpm --filter @zhiyi/shared build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,17 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  '@nestjs/core': set this to true or false
+  '@prisma/engines': set this to true or false
+  prisma: set this to true or false
+
+# 允许执行构建脚本的依赖白名单（pnpm 9+ 默认拦截所有 postinstall 脚本以防供应链攻击）
+# @nestjs/core 的脚本仅打印赞助提示，安全放行以消除告警
+# prisma / @prisma/* 需生成查询引擎与类型化 client，必须放行
+onlyBuiltDependencies:
+  - "@nestjs/core"
+  - "prisma"
+  - "@prisma/engines"
+  - "@prisma/client"

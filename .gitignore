@@ -1,0 +1,42 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+build/
+*.tsbuildinfo
+
+# Prisma 生成的 client（产物，clone 后 prisma generate 重新生成）
+**/generated/prisma/
+
+# 环境变量
+# 约定：.env / .env.development / .env.production / .env.example 入库（只放非敏感默认值）
+# 含密钥的 .env.local 与 .env.*.local 绝不入库
+.env.local
+.env.*.local
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# uni-app / HBuilderX
+unpackage/
+.hbuilderx/
+
+# 测试与缓存
+coverage/
+.cache/
+
+# AI 工具本地私有配置（团队级配置入库，个人本地覆盖不入库）
+.claude/settings.local.json
+.claude/*.local.json

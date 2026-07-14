@@ -1,0 +1,52 @@
+# 知衣 · 本地开发依赖（postgres + redis）
+#
+# 用途：一键拉起本地开发所需的数据库与缓存/队列，凭据与 apps/server/.env.development 对齐。
+# 启动：docker compose up -d
+# 停止：docker compose down（加 -v 连数据卷一起删）
+#
+# 生产环境不用此文件——生产的 pg/redis 由服务器上独立部署，
+# 后端仅靠 .env.production / 系统环境变量里的连接串指向它们。
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zhiyi-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zhiyi
+      POSTGRES_PASSWORD: zhiyi
+      POSTGRES_DB: zhiyi
+      # 中文排序与大小写，避免默认 C locale 下的排序问题
+      LANG: C.UTF-8
+    ports:
+      # 宿主机 5433 → 容器 5432（错开宿主机已占用的 5432），与 DATABASE_URL 对齐
+      - "5433:5432"
+    volumes:
+      - zhiyi-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # 就绪探针：迁移/应用启动前确认 pg 真正可连
+      test: ["CMD-SHELL", "pg_isready -U zhiyi -d zhiyi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: zhiyi-redis
+    restart: unless-stopped
+    # 开启 AOF 持久化，本地重启不丢队列/缓存
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      # 宿主机 6380 → 容器 6379（错开宿主机已占用的 6379）
+      - "6380:6379"
+    volumes:
+      - zhiyi-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  zhiyi-pgdata:
+  zhiyi-redisdata:
