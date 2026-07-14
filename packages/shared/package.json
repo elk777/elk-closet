@@ -1,0 +1,17 @@
+{
+  "name": "@zhiyi/shared",
+  "version": "0.1.0",
+  "description": "知衣 · 前后端共享的类型与 AI 契约（单一事实来源）",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
