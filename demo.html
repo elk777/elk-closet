@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>衣橱 · Closet</title>
+<style>
+  /* ============ 设计变量：中性、克制、留白 ============ */
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --ink: #1c1b19;
+    --ink-2: #6b6862;
+    --ink-3: #a8a49c;
+    --line: #ececE8;
+    --accent: #2f2b26;
+    --radius: 20px;
+    --radius-sm: 14px;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
+    --shadow-soft: 0 2px 12px rgba(0,0,0,.04);
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro SC", "PingFang SC", "Segoe UI", Roboto, Helvetica, sans-serif;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: #e9e7e2;
+    color: var(--ink);
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============ 手机外壳 ============ */
+  .phone {
+    width: 390px;
+    height: 844px;
+    background: var(--bg);
+    border-radius: 44px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.25), 0 0 0 10px #111 , 0 0 0 12px #2a2a2a;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 150px; height: 30px; background: #111; border-radius: 0 0 18px 18px; z-index: 100;
+  }
+
+  /* ============ 顶部状态栏 ============ */
+  .statusbar {
+    height: 52px; display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 0 26px 6px; font-size: 13px; font-weight: 600; color: var(--ink);
+    flex-shrink: 0;
+  }
+  .statusbar .right { display: flex; gap: 6px; align-items: center; }
+
+  /* ============ 顶栏：logo + 工具栏 ============ */
+  .topbar {
+    flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 20px 10px; background: var(--bg);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+  .brand .logo {
+    width: 32px; height: 32px; border-radius: 10px; background: var(--accent);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .brand .logo svg { width: 19px; height: 19px; stroke: #fff; fill: none; stroke-width: 1.9; }
+  .brand .bname { font-size: 16px; font-weight: 700; letter-spacing: -.01em; line-height: 1.1; }
+  .brand .btip { font-size: 10.5px; color: var(--ink-3); margin-top: 1px; }
+
+  .tools { display: flex; gap: 4px; }
+  .tool {
+    background: none; border: none; cursor: pointer; font-family: var(--sans);
+    display: flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: 12px; color: var(--ink-2); transition: all .18s;
+  }
+  .tool:hover { background: var(--surface); color: var(--ink); }
+  .tool:active { transform: scale(.9); }
+  .tool svg { width: 21px; height: 21px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+
+  /* ============ 搜索 ============ */
+  .searchwrap { flex-shrink: 0; padding: 2px 20px 12px; background: var(--bg); position: relative; }
+  .search {
+    display: flex; align-items: center; gap: 9px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 14px; padding: 11px 14px; box-shadow: var(--shadow-soft);
+  }
+  .search svg { width: 17px; height: 17px; stroke: var(--ink-3); fill: none; stroke-width: 2; flex-shrink: 0; }
+  .search input {
+    flex: 1; border: none; outline: none; background: none; font-family: var(--sans);
+    font-size: 14px; color: var(--ink); min-width: 0;
+  }
+  .search input::placeholder { color: var(--ink-3); }
+  .search .clr { color: var(--ink-3); font-size: 18px; cursor: pointer; display: none; }
+  .suggest {
+    position: absolute; left: 20px; right: 20px; top: calc(100% - 6px); z-index: 80;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); padding: 8px; display: none;
+  }
+  .suggest.show { display: block; animation: fade .2s ease; }
+  .sug-label { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; padding: 6px 8px 4px; }
+  .sug-tags { display: flex; flex-wrap: wrap; gap: 7px; padding: 2px 6px 8px; }
+  .sug-tag {
+    font-size: 12.5px; font-weight: 600; color: var(--ink-2); background: var(--bg);
+    border-radius: 18px; padding: 6px 12px; cursor: pointer; transition: all .15s;
+  }
+  .sug-tag:active { transform: scale(.94); }
+  .sug-tag .k { font-size: 10px; color: var(--ink-3); margin-right: 4px; }
+
+  /* ============ 滚动内容区 ============ */
+  .screen {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+    scrollbar-width: none; scroll-behavior: smooth;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+  .feed { padding: 0 20px 120px; }
+  .view { display: none; }
+  .view.active { display: block; animation: fade .32s ease; }
+  .block { padding-top: 8px; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px);} to {opacity:1; transform: none;} }
+
+  /* 二级视图页头：返回 + 标题 */
+  .view-head { display: flex; align-items: center; gap: 12px; padding: 6px 0 16px; }
+  .view-head h2 { font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -.02em; }
+  .view-head .sub2 { font-size: 12px; color: var(--ink-3); margin-left: auto; }
+  .back {
+    width: 34px; height: 34px; border-radius: 11px; border: 1px solid var(--line); background: var(--surface);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: transform .1s;
+  }
+  .back:active { transform: scale(.9); }
+  .back svg { width: 18px; height: 18px; stroke: var(--ink); fill: none; stroke-width: 2; }
+
+  /* 设置：衣柜名 + 分类管理 */
+  .set-name { display: flex; gap: 10px; }
+  .set-name input {
+    flex: 1; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px; font-size: 15px;
+    font-family: var(--sans); color: var(--ink); outline: none; background: var(--bg); min-width: 0;
+  }
+  .set-name input:focus { border-color: var(--ink-3); background: var(--surface); }
+  .set-hint { font-size: 12px; color: var(--ink-3); margin: 10px 2px 0; line-height: 1.5; }
+  .cat-manage { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cat-tag {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px 8px 13px; border-radius: 20px;
+    background: var(--bg); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink);
+  }
+  .cat-tag .del { color: var(--ink-3); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+  .cat-tag .del:hover { color: #c0592c; }
+  .cat-tag svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .add-cat {
+    margin-top: 14px; width: 100%; border: 1px dashed #d4d1ca; background: none; border-radius: 12px;
+    padding: 11px; font-size: 13px; font-weight: 600; color: var(--ink-2); font-family: var(--sans); cursor: pointer;
+  }
+  .add-cat:active { transform: scale(.98); }
+
+  /* ============ 页头 / 区块标题 ============ */
+  .greet { padding: 8px 0 6px; }
+  .greet .kicker { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; }
+  .greet h1 { margin: 4px 0 0; font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+
+  .sec-title { display: flex; align-items: baseline; justify-content: space-between; margin: 0 2px 14px; }
+  .sec-title h2 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .sec-title .sub2 { font-size: 12px; color: var(--ink-3); }
+  .sec-title .link { font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .block-gap { margin-top: 34px; }
+
+  /* ============ 卡片 ============ */
+  .card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-soft); }
+
+  /* 天气卡 */
+  .weather {
+    padding: 20px; margin-bottom: 4px;
+    background: linear-gradient(135deg, #3a3733 0%, #26241f 100%);
+    color: #fff; border-radius: var(--radius);
+    display: flex; justify-content: space-between; align-items: flex-start;
+  }
+  .weather .temp { font-size: 40px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+  .weather .loc { font-size: 13px; opacity: .7; margin-top: 8px; }
+  .weather .desc { font-size: 13px; opacity: .85; margin-top: 2px; }
+  .weather .meta { text-align: right; font-size: 12px; opacity: .75; line-height: 1.7; }
+  .weather .ico { font-size: 32px; }
+
+  /* ============ 推荐搭配大卡 ============ */
+  .outfit-card { padding: 18px; }
+  .outfit-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .tag { display: inline-block; font-size: 11px; padding: 4px 10px; border-radius: 20px; background: #f0efeb; color: var(--ink-2); font-weight: 600; }
+  .tag.dark { background: var(--accent); color: #fff; }
+  .outfit-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .item-thumb {
+    aspect-ratio: 1; border-radius: var(--radius-sm); background: var(--bg);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;
+  }
+  .item-thumb svg { width: 66%; height: 66%; }
+  .item-thumb .name { position: absolute; bottom: 8px; left: 10px; font-size: 11px; color: var(--ink-2); font-weight: 600; }
+
+  .outfit-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn {
+    flex: 1; border: none; padding: 13px; border-radius: 14px; font-size: 14px; font-weight: 600;
+    font-family: var(--sans); cursor: pointer; transition: transform .08s, opacity .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.ghost { background: #f0efeb; color: var(--ink); }
+
+  .reason { font-size: 13px; color: var(--ink-2); line-height: 1.6; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .reason b { color: var(--ink); font-weight: 600; }
+
+  /* ============ 衣橱：分组筛选 ============ */
+  .filter-group { margin-bottom: 12px; }
+  .filter-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; margin: 0 2px 8px; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 4px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; padding: 8px 14px; border-radius: 20px; background: var(--surface);
+    font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; border: 1px solid var(--line);
+    transition: all .18s; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .chip svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* 衣橱网格 */
+  .closet-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-top: 14px; }
+  .garment {
+    background: var(--surface); border-radius: var(--radius-sm); overflow: hidden; box-shadow: var(--shadow-soft);
+    cursor: pointer; transition: transform .1s; animation: fade .4s ease backwards;
+  }
+  .garment:active { transform: scale(.97); }
+  .garment .pic { aspect-ratio: 1; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .garment .pic svg { width: 62%; height: 62%; }
+  .garment .info { padding: 10px 12px 12px; }
+  .garment .info .gname { font-size: 13px; font-weight: 600; }
+  .garment .info .gmeta { font-size: 11px; color: var(--ink-3); margin-top: 3px; display: flex; gap: 6px; align-items: center; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; border: 1px solid rgba(0,0,0,.08); }
+  .empty { grid-column: 1/-1; text-align: center; color: var(--ink-3); font-size: 13px; padding: 30px 0; }
+
+  /* ============ 智能搭配维度切换 ============ */
+  .seg { display: flex; background: #e9e7e2; border-radius: 14px; padding: 4px; margin-bottom: 16px; }
+  .seg button { flex:1; border:none; background: transparent; padding: 9px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--ink-2); font-family: var(--sans); cursor: pointer; transition: all .2s; }
+  .seg button.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-soft); }
+
+  .match-list { display: flex; flex-direction: column; gap: 14px; }
+  .match-card { background: var(--surface); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-soft); animation: fade .35s ease; }
+  .match-card .mc-head { display:flex; justify-content: space-between; align-items:center; margin-bottom: 12px; }
+  .match-card .mc-title { font-size: 15px; font-weight: 700; }
+  .match-card .mc-strip { display: flex; gap: 8px; }
+  .match-card .mc-strip .item-thumb { flex:1; aspect-ratio: 1; }
+  .match-card .mc-foot { display: flex; justify-content: flex-end; margin-top: 12px; }
+  .score { font-size: 12px; font-weight: 700; color: var(--ink); background: #f0efeb; padding: 4px 10px; border-radius: 20px; }
+
+  /* ============ 看板 ============ */
+  .stat-row { display: grid; grid-template-columns: repeat(2,1fr); gap: 12px; margin-bottom: 12px; }
+  .stat { background: var(--surface); border-radius: var(--radius-sm); padding: 16px; box-shadow: var(--shadow-soft); }
+  .stat .n { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .stat .l { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .panel { background: var(--surface); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-soft); margin-bottom: 14px; }
+  .panel h3 { font-size: 14px; margin: 0 0 14px; font-weight: 700; }
+  .bar-row { display:flex; align-items:center; gap: 10px; margin-bottom: 12px; }
+  .bar-row .bl { font-size: 12px; color: var(--ink-2); width: 52px; flex-shrink:0; }
+  .bar-track { flex:1; height: 8px; background: #f0efeb; border-radius: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--accent); border-radius: 8px; }
+  .bar-row .bv { font-size: 12px; color: var(--ink-3); width: 34px; text-align: right; }
+
+  .color-dist { display:flex; gap: 6px; height: 14px; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+  .color-legend { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; }
+  .color-legend .cl { display:flex; align-items:center; gap: 8px; font-size: 12px; color: var(--ink-2); }
+
+  .cost-list .cost-item { display:flex; justify-content: space-between; align-items:center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .cost-list .cost-item:last-child { border-bottom: none; }
+  .cost-item .ci-name { font-weight: 600; }
+  .cost-item .ci-sub { font-size: 11px; color: var(--ink-3); }
+  .cost-item .ci-val { font-weight: 700; }
+  .cost-item .ci-val.good { color: #2f7a4d; }
+  .cost-item .ci-val.bad { color: #c0592c; }
+
+  /* ============ 衣物详情页 ============ */
+  .detail-hero {
+    aspect-ratio: 1; background: var(--surface); border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-soft);
+    margin-bottom: 16px; position: relative;
+  }
+  .detail-hero svg { width: 56%; height: 56%; }
+  .detail-hero .heart {
+    position: absolute; top: 14px; right: 14px; width: 38px; height: 38px; border-radius: 50%;
+    background: rgba(255,255,255,.9); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: var(--shadow-soft);
+  }
+  .detail-hero .heart svg { width: 20px; height: 20px; stroke: var(--ink-2); fill: none; stroke-width: 1.8; }
+  .detail-hero .heart.on svg { fill: #d9704e; stroke: #d9704e; }
+  .detail-title { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+  .detail-cat { font-size: 13px; color: var(--ink-2); margin-top: 3px; display: flex; align-items: center; gap: 7px; }
+
+  .detail-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin: 18px 0 24px; }
+  .detail-stats .ds { background: var(--surface); border-radius: var(--radius-sm); padding: 15px 8px; text-align: center; box-shadow: var(--shadow-soft); }
+  .detail-stats .ds .dn { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+  .detail-stats .ds .dn small { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+  .detail-stats .ds .dl { font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+
+  .spec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0 18px; }
+  .spec { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .spec .sk { color: var(--ink-3); }
+  .spec .sv { font-weight: 600; color: var(--ink); }
+
+  .look-strip { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .look-strip::-webkit-scrollbar { display: none; }
+  .look-mini { flex-shrink: 0; width: 92px; cursor: pointer; }
+  .look-mini .lp { width: 92px; height: 116px; border-radius: 12px; overflow: hidden; }
+  .look-mini .ll { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; }
+  .detail-actions { display: flex; gap: 10px; margin-top: 22px; }
+
+  /* “美照”占位：柔和渐变 + 人像剪影 */
+  .photo { display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+  .photo svg { width: 64%; height: auto; }
+
+  /* ============ 穿搭日记 / 打卡 ============ */
+  .diary-cta {
+    display: flex; align-items: center; gap: 12px; background: var(--accent); color: #fff;
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px; cursor: pointer;
+    border: none; width: 100%; font-family: var(--sans); text-align: left; transition: transform .1s;
+  }
+  .diary-cta:active { transform: scale(.98); }
+  .diary-cta .dci { width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .diary-cta .dci svg { width: 22px; height: 22px; stroke: #fff; fill: none; stroke-width: 1.9; }
+  .diary-cta .dct { font-size: 15px; font-weight: 700; }
+  .diary-cta .dcs { font-size: 12px; opacity: .75; margin-top: 2px; }
+
+  .cal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .cal-head .cm { font-size: 15px; font-weight: 700; }
+  .cal-head .cnav { display: flex; gap: 6px; }
+  .cal-head .cnav button { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink-2); cursor: pointer; font-size: 15px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; }
+  .cal-dow { font-size: 10px; color: var(--ink-3); text-align: center; font-weight: 700; padding-bottom: 2px; }
+  .cal-cell {
+    aspect-ratio: .82; border-radius: 9px; background: var(--bg); position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-3);
+  }
+  .cal-cell.empty { background: transparent; }
+  .cal-cell.has { cursor: pointer; }
+  .cal-cell.has .cd { position: absolute; top: 3px; left: 5px; font-size: 9px; color: #fff; font-weight: 700; z-index: 2; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .cal-cell.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .diary-recent { display: flex; flex-direction: column; gap: 12px; }
+  .diary-item { display: flex; gap: 12px; background: var(--surface); border-radius: var(--radius-sm); padding: 10px; box-shadow: var(--shadow-soft); cursor: pointer; transition: transform .1s; }
+  .diary-item:active { transform: scale(.98); }
+  .diary-item .dp { width: 64px; height: 82px; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+  .diary-item .di-b { flex: 1; min-width: 0; }
+  .diary-item .di-t { font-size: 14px; font-weight: 700; }
+  .diary-item .di-m { font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+  .diary-item .di-items { font-size: 11px; color: var(--ink-2); margin-top: 8px; display: flex; gap: 5px; }
+  .diary-item .di-items .mini-dot { width: 16px; height: 16px; border-radius: 5px; border: 1px solid rgba(0,0,0,.06); }
+
+  /* 打卡确认弹层里的选衣 */
+  .log-selfie { border-radius: var(--radius); overflow: hidden; height: 200px; margin-bottom: 16px; }
+  .log-pick-label { font-size: 12px; color: var(--ink-2); font-weight: 600; margin-bottom: 10px; }
+  .log-pick { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 8px; }
+  .log-pick .lpi {
+    aspect-ratio: 1; border-radius: 10px; background: var(--surface); border: 2px solid var(--line);
+    display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; transition: all .15s;
+  }
+  .log-pick .lpi svg { width: 64%; height: 64%; }
+  .log-pick .lpi.on { border-color: var(--accent); }
+  .log-pick .lpi.on::after { content: '✓'; position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; background: var(--accent); color: #fff; border-radius: 50%; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+
+  /* 搜索结果页 */
+  .search-summary { font-size: 13px; color: var(--ink-2); margin-bottom: 14px; }
+  .search-summary b { color: var(--ink); font-weight: 700; }
+
+  /* ============ AI 试穿 ============ */
+  /* 试穿舞台：全身照打底，各部位单品叠加其上 */
+  .tryon-stage {
+    position: relative; width: 100%; aspect-ratio: 3/4; border-radius: var(--radius);
+    overflow: hidden; background: var(--surface); box-shadow: var(--shadow-soft); margin-bottom: 14px;
+  }
+  .tryon-stage .selfie { position: absolute; inset: 0; }
+  /* 叠加的单品：绝对定位到大致人体部位 */
+  .tryon-layer {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity .5s ease;
+  }
+  .tryon-layer.on { opacity: 1; }
+  .tryon-layer svg { width: 100%; height: 100%; filter: drop-shadow(0 4px 10px rgba(0,0,0,.18)); }
+  .tryon-layer[data-slot="coat"]  { top: 20%; width: 62%; height: 40%; }
+  .tryon-layer[data-slot="top"]   { top: 22%; width: 46%; height: 32%; }
+  .tryon-layer[data-slot="bottom"]{ top: 47%; width: 46%; height: 40%; }
+  .tryon-layer[data-slot="shoe"]  { top: 84%; width: 40%; height: 14%; }
+  /* 生成中的遮罩 */
+  .tryon-gen {
+    position: absolute; inset: 0; background: rgba(28,25,22,.42); backdrop-filter: blur(3px);
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; z-index: 5;
+    color: #fff;
+  }
+  .tryon-gen.show { display: flex; }
+  .tryon-gen .g-t { font-size: 14px; font-weight: 700; }
+  .tryon-gen .g-s { font-size: 12px; opacity: .8; }
+  .tryon-gen .spinner { border-color: rgba(255,255,255,.25); border-top-color: #fff; }
+  /* 空舞台引导 */
+  .tryon-empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; text-align: center; padding: 0 30px; color: var(--ink-3); z-index: 4;
+  }
+  .tryon-empty .te-ico { width: 52px; height: 52px; border-radius: 16px; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .tryon-empty .te-ico svg { width: 26px; height: 26px; stroke: var(--ink-3); fill: none; stroke-width: 1.7; }
+  .tryon-empty .te-t { font-size: 14px; font-weight: 700; color: var(--ink-2); }
+  .tryon-empty .te-s { font-size: 12px; line-height: 1.5; }
+  .tryon-empty .btn { flex: none; padding: 10px 20px; margin-top: 4px; }
+  /* 隐私说明卡：上传全身照前的安心提示 */
+  .privacy-note {
+    display: flex; gap: 9px; text-align: left; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 12px; padding: 11px 12px; margin-top: 2px; max-width: 280px;
+  }
+  .privacy-note .pn-ico { flex-shrink: 0; margin-top: 1px; }
+  .privacy-note .pn-ico svg { width: 16px; height: 16px; stroke: var(--ink-2); fill: none; stroke-width: 1.8; }
+  .privacy-note .pn-t { font-size: 11.5px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
+  .privacy-note ul { margin: 0; padding-left: 14px; }
+  .privacy-note li { font-size: 11px; color: var(--ink-2); line-height: 1.65; }
+
+  /* 当前已穿的部位小结 */
+  .tryon-worn { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .worn-chip {
+    display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 10px 5px 6px; font-size: 12px; font-weight: 600; color: var(--ink);
+  }
+  .worn-chip .wc-thumb { width: 22px; height: 22px; border-radius: 6px; background: var(--bg); display: flex; align-items: center; justify-content: center; }
+  .worn-chip .wc-thumb svg { width: 80%; height: 80%; }
+  .worn-chip .wc-x { color: var(--ink-3); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+  .worn-chip .wc-x:hover { color: #c0592c; }
+
+  /* 部位切换 + 可选单品横滑 */
+  .tryon-slots { display: flex; gap: 8px; margin-bottom: 12px; }
+  .slot-tab {
+    flex: 1; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 9px 4px;
+    font-size: 12px; font-weight: 600; color: var(--ink-2); cursor: pointer; font-family: var(--sans);
+    display: flex; flex-direction: column; align-items: center; gap: 4px; transition: all .18s;
+  }
+  .slot-tab svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
+  .slot-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tryon-picker { display: flex; gap: 10px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+  .tryon-picker::-webkit-scrollbar { display: none; }
+  .pick-item {
+    flex-shrink: 0; width: 76px; cursor: pointer; transition: transform .1s;
+  }
+  .pick-item:active { transform: scale(.95); }
+  .pick-item .pi-pic {
+    width: 76px; height: 76px; border-radius: 12px; background: var(--surface); border: 2px solid var(--line);
+    display: flex; align-items: center; justify-content: center; transition: border-color .15s;
+  }
+  .pick-item.on .pi-pic { border-color: var(--accent); }
+  .pick-item .pi-pic svg { width: 64%; height: 64%; }
+  .pick-item .pi-n { font-size: 10.5px; color: var(--ink-2); margin-top: 5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .tryon-hint { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; margin: 14px 2px 0; text-align: center; }
+
+  /* 「试穿看」入口按钮（推荐/搭配卡内） */
+  .tryon-entry {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+    color: var(--ink); background: #f0efeb; border: none; border-radius: 20px; padding: 6px 12px;
+    cursor: pointer; font-family: var(--sans); transition: transform .08s;
+  }
+  .tryon-entry:active { transform: scale(.95); }
+  .tryon-entry svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.9; }
+
+  /* 试穿舞台右上角「全部脱下」重置 */
+  .tryon-reset {
+    position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(255,255,255,.9); border: none; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; box-shadow: var(--shadow-soft); z-index: 6;
+  }
+  .tryon-reset svg { width: 18px; height: 18px; stroke: var(--ink-2); fill: none; stroke-width: 1.9; }
+  .tryon-actions { display: flex; gap: 10px; margin-top: 18px; }
+
+  /* ============ 悬浮添加按钮 ============ */
+  .fab {
+    position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+    height: 56px; padding: 0 26px; border-radius: 32px; background: var(--accent); color: #fff;
+    border: none; font-family: var(--sans); font-size: 15px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; gap: 8px; z-index: 90;
+    box-shadow: 0 8px 24px rgba(0,0,0,.28); transition: transform .12s;
+  }
+  .fab:active { transform: translateX(-50%) scale(.95); }
+  .fab svg { width: 20px; height: 20px; stroke: #fff; fill: none; stroke-width: 2.4; }
+
+  /* ============ 添加衣物：底部弹层 ============ */
+  .sheet-mask {
+    position: absolute; inset: 0; background: rgba(20,18,16,.4); backdrop-filter: blur(2px);
+    opacity: 0; pointer-events: none; transition: opacity .3s; z-index: 150;
+  }
+  .sheet-mask.show { opacity: 1; pointer-events: auto; }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; background: var(--bg);
+    border-radius: 28px 28px 0 0; padding: 8px 20px 28px; z-index: 160;
+    transform: translateY(100%); transition: transform .34s cubic-bezier(.32,.72,0,1);
+    max-height: 90%; overflow-y: auto; scrollbar-width: none;
+  }
+  .sheet::-webkit-scrollbar { display: none; }
+  .sheet.show { transform: translateY(0); }
+  .sheet .grip { width: 40px; height: 5px; border-radius: 3px; background: #d4d1ca; margin: 6px auto 14px; }
+  .sheet h2 { font-size: 20px; font-weight: 700; margin: 0 2px 4px; }
+  .sheet .sub { color: var(--ink-2); font-size: 13px; margin: 0 2px 18px; }
+
+  .dropzone {
+    border: 2px dashed #d4d1ca; border-radius: var(--radius); padding: 36px 20px; text-align: center;
+    color: var(--ink-2); cursor: pointer; transition: all .2s; background: var(--surface);
+  }
+  .dropzone:hover { border-color: var(--ink-3); background: #fbfbf9; }
+  .dropzone.loading { border-style: solid; border-color: var(--accent); }
+  .dropzone .dz-ico { font-size: 34px; }
+  .dropzone .dz-t { font-weight: 700; margin-top: 10px; font-size: 15px; color: var(--ink); }
+  .dropzone .dz-s { font-size: 12px; margin-top: 4px; }
+  .spinner { width: 30px; height: 30px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .import-alt { display: flex; gap: 10px; margin-top: 14px; }
+  .import-alt .ia { flex:1; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align:center; font-size: 12px; font-weight: 600; color: var(--ink-2); cursor:pointer; }
+
+  .ai-result { margin-top: 20px; animation: fade .4s ease; }
+  .ai-preview { display: flex; gap: 14px; align-items: center; padding: 16px; background: var(--surface); border-radius: var(--radius-sm); box-shadow: var(--shadow-soft); }
+  .ai-preview .pv { width: 74px; height: 74px; border-radius: 12px; background: var(--bg); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .ai-preview .pv svg { width: 60%; height: 60%; }
+  .ai-badge { font-size: 11px; color: #2f7a4d; background: #e6f4ec; padding: 3px 8px; border-radius: 20px; font-weight: 700; display:inline-block; }
+  .field { margin-top: 14px; }
+  .field label { font-size: 12px; color: var(--ink-2); font-weight: 600; display:block; margin-bottom: 6px; }
+  .field .val { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; display:flex; justify-content: space-between; align-items:center; }
+  .field .val .edit { color: var(--ink-3); font-size: 12px; }
+  .pill-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { padding: 8px 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .pill.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .toast {
+    position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--accent); color:#fff; padding: 11px 20px; border-radius: 24px; font-size: 13px; font-weight: 600;
+    opacity: 0; transition: all .3s; pointer-events: none; z-index: 200; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="right">􀙇 􀯪 􀛨</span>
+  </div>
+
+  <!-- ============ 顶栏：logo + 工具栏 ============ -->
+  <header class="topbar">
+    <div class="brand" onclick="openSettings()">
+      <span class="logo">
+        <svg viewBox="0 0 24 24"><path d="M12 3v6M12 9l-6 4M12 9l6 4M4 13h16l-1 8H5z"/></svg>
+      </span>
+      <div>
+        <div class="bname" id="brand-name">Elk 的衣橱</div>
+        <div class="btip">42 件 · 点击管理</div>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="tool" onclick="openView('closet')" title="我的衣橱" aria-label="我的衣橱">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16M10 4v16"/></svg>
+      </button>
+      <button class="tool" onclick="openDiary()" title="穿搭日记" aria-label="穿搭日记">
+        <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M4 9h16M9 3v4M15 3v4"/><circle cx="12" cy="14.5" r="2.2"/></svg>
+      </button>
+      <button class="tool" onclick="openView('match')" title="智能搭配" aria-label="智能搭配">
+        <svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 10l-4.5 3.8L17 20l-5-3-5 3 1.5-6.2L4 10l5.8-1.4z"/></svg>
+      </button>
+      <button class="tool" onclick="openView('board')" title="衣橱看板" aria-label="衣橱看板">
+        <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>
+      </button>
+      <button class="tool" onclick="openSettings()" title="设置" aria-label="设置">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M4.2 7l2.1 1.2M17.7 15.8l2.1 1.2M4.2 17l2.1-1.2M17.7 8.2l2.1-1.2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ 搜索 ============ -->
+  <div class="searchwrap">
+    <div class="search">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input id="search-input" placeholder="搜关键词、风格、场合…" autocomplete="off" />
+      <span class="clr" id="search-clr">×</span>
+    </div>
+    <div class="suggest" id="suggest">
+      <div class="sug-label">试试搜</div>
+      <div class="sug-tags" id="sug-tags"></div>
+    </div>
+  </div>
+
+  <div class="screen" id="screen">
+
+    <!-- ============ 首页：只有今日 ============ -->
+    <div class="feed view active" id="view-home">
+      <section class="block" id="b-today">
+        <div class="greet">
+          <div class="kicker">7月12日 · 周六</div>
+          <h1>早上好，Elk</h1>
+        </div>
+
+        <div class="weather">
+          <div>
+            <div class="temp">28°</div>
+            <div class="loc">杭州 · 多云转晴</div>
+            <div class="desc">体感 31° · 紫外线强</div>
+          </div>
+          <div class="meta">
+            <div class="ico">⛅</div>
+            <div>湿度 62%</div>
+            <div>东南风 2级</div>
+            <div>降水 10%</div>
+          </div>
+        </div>
+
+        <div class="sec-title" style="margin-top:24px">
+          <h2>今日推荐</h2>
+          <span class="link" id="refresh-outfit">换一套 ↻</span>
+        </div>
+
+        <div class="card outfit-card" id="today-outfit"></div>
+      </section>
+    </div>
+
+    <!-- ============ 我的衣橱 ============ -->
+    <div class="feed view" id="view-closet">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>我的衣橱</h2>
+        <span class="sub2" id="closet-count">共 42 件</span>
+      </div>
+
+      <div class="filter-group">
+        <div class="filter-label">服装</div>
+        <div class="chips" id="chips-clothing"></div>
+      </div>
+      <div class="filter-group">
+        <div class="filter-label">配饰</div>
+        <div class="chips" id="chips-accessory"></div>
+      </div>
+
+      <div class="closet-grid" id="closet-grid"></div>
+    </div>
+
+    <!-- ============ 智能搭配 ============ -->
+    <div class="feed view" id="view-match">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>智能搭配</h2>
+        <span class="sub2">换个维度找灵感</span>
+      </div>
+      <div class="seg" id="match-seg">
+        <button class="active" data-dim="occasion">场合</button>
+        <button data-dim="style">风格</button>
+        <button data-dim="season">季节</button>
+      </div>
+      <div class="chips" id="match-chips" style="margin-bottom:16px"></div>
+      <div class="match-list" id="match-list"></div>
+    </div>
+
+    <!-- ============ 衣橱看板 ============ -->
+    <div class="feed view" id="view-board">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>衣橱看板</h2>
+        <span class="sub2">你的衣橱数据</span>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat"><div class="n">42</div><div class="l">衣物总数</div></div>
+        <div class="stat"><div class="n">¥18.6k</div><div class="l">衣橱总价值</div></div>
+      </div>
+      <div class="stat-row">
+        <div class="stat"><div class="n">73%</div><div class="l">近30天利用率</div></div>
+        <div class="stat"><div class="n">11</div><div class="l">压箱底未穿</div></div>
+      </div>
+
+      <div class="panel">
+        <h3>品类占比</h3>
+        <div id="cat-bars"></div>
+      </div>
+
+      <div class="panel">
+        <h3>颜色分布</h3>
+        <div class="color-dist" id="color-dist"></div>
+        <div class="color-legend" id="color-legend"></div>
+      </div>
+
+      <div class="panel">
+        <h3>单次成本 · 越低越值</h3>
+        <div class="cost-list" id="cost-list"></div>
+      </div>
+    </div>
+
+    <!-- ============ 设置 ============ -->
+    <div class="feed view" id="view-settings">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>设置</h2>
+      </div>
+
+      <div class="panel">
+        <h3>衣柜名称</h3>
+        <div class="set-name">
+          <input id="closet-name-input" value="Elk 的衣橱" maxlength="16" />
+          <button class="btn primary" style="flex:0 0 auto;padding:11px 18px" onclick="saveClosetName()">保存</button>
+        </div>
+        <p class="set-hint">显示在首页左上角，最多 16 个字。</p>
+      </div>
+
+      <div class="panel">
+        <h3>服装分类</h3>
+        <div class="cat-manage" id="manage-clothing"></div>
+        <button class="add-cat" onclick="addCat('clothing')">＋ 添加服装分类</button>
+      </div>
+
+      <div class="panel">
+        <h3>配饰分类</h3>
+        <div class="cat-manage" id="manage-accessory"></div>
+        <button class="add-cat" onclick="addCat('accessory')">＋ 添加配饰分类</button>
+      </div>
+    </div>
+
+    <!-- ============ 衣物详情 ============ -->
+    <div class="feed view" id="view-detail">
+      <div class="view-head">
+        <button class="back" onclick="openView('closet')"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>单品</h2>
+        <span class="sub2" id="detail-edit" style="cursor:pointer" onclick="toast('模拟：编辑单品')">编辑</span>
+      </div>
+      <div id="detail-body"><!-- JS 注入 --></div>
+    </div>
+
+    <!-- ============ 搜索结果 ============ -->
+    <div class="feed view" id="view-search">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>搜索</h2>
+      </div>
+      <div class="search-summary" id="search-summary"></div>
+      <div class="chips" id="search-refine" style="margin-bottom:16px"></div>
+      <div class="closet-grid" id="search-grid"></div>
+    </div>
+
+    <!-- ============ 穿搭日记 ============ -->
+    <div class="feed view" id="view-diary">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>穿搭日记</h2>
+        <span class="sub2">只给自己看</span>
+      </div>
+
+      <button class="diary-cta" onclick="openLog()">
+        <span class="dci"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="14" r="3.5"/></svg></span>
+        <span>
+          <span class="dct">记录今天穿搭</span>
+          <span class="dcs">拍张美照，系统自动帮你关联衣物</span>
+        </span>
+      </button>
+
+      <div class="panel">
+        <div class="cal-head">
+          <span class="cm">2026 年 7 月</span>
+          <span class="cnav"><button onclick="toast('上个月')">‹</button><button onclick="toast('下个月')">›</button></span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+
+      <div class="sec-title"><h2 style="font-size:15px">最近记录</h2></div>
+      <div class="diary-recent" id="diary-recent"></div>
+    </div>
+
+    <!-- ============ AI 试穿 ============ -->
+    <div class="feed view" id="view-tryon">
+      <div class="view-head">
+        <button class="back" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <h2>AI 试穿</h2>
+        <span class="sub2">预览效果 · 仅供参考</span>
+      </div>
+
+      <!-- 试穿画布：全身照打底 + 单品逐件叠加 -->
+      <div class="tryon-stage" id="tryon-stage">
+        <div class="selfie" id="tryon-selfie"></div>
+        <!-- 各部位叠加层由 JS 注入 .tryon-layer -->
+
+        <!-- 未上传全身照时的引导 -->
+        <div class="tryon-empty" id="tryon-empty">
+          <div class="te-ico"><svg viewBox="0 0 24 24"><path d="M4 20a8 8 0 0116 0"/><circle cx="12" cy="8" r="4"/></svg></div>
+          <div class="te-t">先上传一张全身照</div>
+          <div class="te-s">只需上传一次，之后所有试穿都复用它</div>
+          <div class="privacy-note">
+            <span class="pn-ico"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+            <div>
+              <div class="pn-t">你的照片，只属于你</div>
+              <ul>
+                <li>仅存在你自己的衣橱，不公开、不分享给任何人</li>
+                <li>只用于本人试穿，绝不用于 AI 训练</li>
+                <li>随时可在设置里一键删除</li>
+              </ul>
+            </div>
+          </div>
+          <button class="btn primary" onclick="uploadSelfie()">上传全身照</button>
+        </div>
+
+        <!-- 生成中遮罩 -->
+        <div class="tryon-gen" id="tryon-gen">
+          <div class="spinner"></div>
+          <div class="g-t">AI 正在生成上身效果…</div>
+          <div class="g-s" id="tryon-gen-s">替换上装中</div>
+        </div>
+
+        <button class="tryon-reset" id="tryon-reset" onclick="resetTryon()" title="全部脱下" style="display:none">
+          <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8 8 8 0 00-6 2.7M4 4v3.5H7.5"/></svg>
+        </button>
+      </div>
+
+      <!-- 当前已穿部位小结 -->
+      <div class="tryon-worn" id="tryon-worn"></div>
+
+      <!-- 部位切换 -->
+      <div class="tryon-slots" id="tryon-slots"></div>
+
+      <!-- 该部位可选单品 -->
+      <div class="tryon-picker" id="tryon-picker"></div>
+
+      <div class="tryon-hint">单件叠加：选一件先生成，满意了再换下个部位 · AI 效果仅供参考，实际以真实试穿为准</div>
+
+      <div class="tryon-actions">
+        <button class="btn ghost" onclick="toast('已保存这张试穿效果图')">保存效果图</button>
+        <button class="btn primary" onclick="tryonToDiary()">存为今日穿搭</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ 悬浮添加按钮 ============ -->
+  <button class="fab" onclick="openSheet()">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    添加衣物
+  </button>
+
+  <!-- ============ 添加衣物：底部弹层 ============ -->
+  <div class="sheet-mask" id="sheet-mask" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet">
+    <div class="grip"></div>
+    <h2>添加衣物</h2>
+    <p class="sub">拍张照，剩下的交给 AI 自动填。</p>
+
+    <div class="dropzone" id="dropzone" onclick="simulateUpload()">
+      <div id="dz-idle">
+        <div class="dz-ico">📷</div>
+        <div class="dz-t">拍照 / 拖拽上传</div>
+        <div class="dz-s">自动抠图去背景，识别品类、颜色、材质</div>
+      </div>
+      <div id="dz-loading" style="display:none">
+        <div class="spinner"></div>
+        <div class="dz-t" style="margin-top:14px">AI 正在识别…</div>
+        <div class="dz-s" id="dz-step">抠图去背景</div>
+      </div>
+    </div>
+
+    <div class="import-alt">
+      <div class="ia" onclick="toast('模拟：从截图导入')">🖼️ 从截图导入</div>
+      <div class="ia" onclick="toast('模拟：从订单导入')">🛍️ 从订单导入</div>
+    </div>
+
+    <div class="ai-result" id="ai-result" style="display:none">
+      <div class="ai-preview">
+        <div class="pv" id="ai-pv"></div>
+        <div>
+          <span class="ai-badge">✓ 已自动识别</span>
+          <div style="font-weight:700; font-size:15px; margin-top:8px">米白色针织衫</div>
+          <div style="font-size:12px; color:var(--ink-3); margin-top:2px">你可以点任意字段修改</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>品类</label>
+        <div class="val">上衣 · 针织衫 <span class="edit">修改</span></div>
+      </div>
+      <div class="field">
+        <label>主色调</label>
+        <div class="val"><span style="display:flex;align-items:center;gap:8px"><span class="dot" style="background:#e8e2d4"></span>米白</span><span class="edit">修改</span></div>
+      </div>
+      <div class="field">
+        <label>适用季节</label>
+        <div class="pill-row">
+          <span class="pill">春</span><span class="pill on">秋</span><span class="pill">夏</span><span class="pill on">冬</span>
+        </div>
+      </div>
+      <div class="field">
+        <label>正式度</label>
+        <div class="pill-row">
+          <span class="pill">休闲</span><span class="pill on">日常</span><span class="pill">正式</span>
+        </div>
+      </div>
+      <button class="btn primary" style="width:100%; margin-top:20px" onclick="saveGarment()">存入衣橱</button>
+    </div>
+  </div>
+
+  <!-- ============ 记录穿搭：底部弹层 ============ -->
+  <div class="sheet-mask" id="log-mask" onclick="closeLog()"></div>
+  <div class="sheet" id="log-sheet">
+    <div class="grip"></div>
+    <h2>记录今天穿搭</h2>
+    <p class="sub">存一张美照，系统猜你穿了哪几件，点一下确认就好。</p>
+
+    <div class="log-selfie photo" id="log-selfie"></div>
+
+    <div class="log-pick-label">今天穿了这几件？（系统已智能识别，可增减）</div>
+    <div class="log-pick" id="log-pick"></div>
+
+    <button class="btn primary" style="width:100%; margin-top:18px" onclick="saveLog()">保存到穿搭日记</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ============================================================
+   衣物 / 配饰 SVG 剪影库：统一线条风格，柔和色块
+   ============================================================ */
+function garmentSVG(type, color) {
+  const c = color || '#c9c4ba';
+  const s = {
+    top:      `<svg viewBox="0 0 100 100"><path d="M30 22 L20 30 L26 40 L30 36 L30 78 L70 78 L70 36 L74 40 L80 30 L70 22 L60 22 Q50 32 40 22 Z" fill="${c}"/></svg>`,
+    knit:     `<svg viewBox="0 0 100 100"><path d="M28 24 L18 34 L25 44 L28 40 L28 80 L72 80 L72 40 L75 44 L82 34 L72 24 L62 24 Q50 30 38 24 Z" fill="${c}"/><path d="M40 30 Q50 36 60 30" stroke="rgba(0,0,0,.06)" fill="none" stroke-width="2"/></svg>`,
+    shirt:    `<svg viewBox="0 0 100 100"><path d="M32 22 L22 30 L27 40 L32 37 L32 80 L68 80 L68 37 L73 40 L78 30 L68 22 L58 22 L50 30 L42 22 Z" fill="${c}"/><path d="M50 30 L50 78" stroke="rgba(0,0,0,.05)" stroke-width="1.5"/></svg>`,
+    coat:     `<svg viewBox="0 0 100 100"><path d="M30 20 L18 30 L24 44 L30 40 L30 84 L48 84 L48 40 L52 40 L52 84 L70 84 L70 40 L76 44 L82 30 L70 20 L58 20 Q50 30 42 20 Z" fill="${c}"/></svg>`,
+    pants:    `<svg viewBox="0 0 100 100"><path d="M32 20 L68 20 L66 84 L54 84 L50 44 L46 84 L34 84 Z" fill="${c}"/></svg>`,
+    skirt:    `<svg viewBox="0 0 100 100"><path d="M34 24 L66 24 L78 78 L22 78 Z" fill="${c}"/></svg>`,
+    dress:    `<svg viewBox="0 0 100 100"><path d="M36 20 L28 28 L34 38 L36 34 Q30 60 24 84 L76 84 Q70 60 64 34 L66 38 L72 28 L64 20 L56 20 Q50 28 44 20 Z" fill="${c}"/></svg>`,
+    suit:     `<svg viewBox="0 0 100 100"><path d="M34 20 L24 28 L29 40 L34 37 L34 82 L48 82 L48 46 L52 46 L52 82 L66 82 L66 37 L71 40 L76 28 L66 20 L58 20 L50 34 L42 20 Z" fill="${c}"/></svg>`,
+    shoe:     `<svg viewBox="0 0 100 100"><path d="M20 56 L44 56 Q52 56 60 62 L80 66 Q86 68 86 72 L86 76 L20 76 Z" fill="${c}"/><path d="M20 62 L44 62" stroke="rgba(0,0,0,.06)" stroke-width="2"/></svg>`,
+    bag:      `<svg viewBox="0 0 100 100"><path d="M30 40 L70 40 L74 82 L26 82 Z" fill="${c}"/><path d="M40 40 Q40 24 50 24 Q60 24 60 40" stroke="${c}" stroke-width="4" fill="none"/></svg>`,
+    hat:      `<svg viewBox="0 0 100 100"><path d="M22 64 Q50 54 78 64 L78 68 Q50 60 22 68 Z" fill="${c}"/><path d="M34 64 Q34 34 50 34 Q66 34 66 64 Z" fill="${c}"/></svg>`,
+    jewel:    `<svg viewBox="0 0 100 100"><path d="M50 30 L64 44 L50 74 L36 44 Z" fill="${c}"/><path d="M36 44 L64 44" stroke="rgba(0,0,0,.08)" stroke-width="1.5"/><path d="M50 30 L50 44" stroke="rgba(0,0,0,.08)" stroke-width="1.5"/></svg>`,
+    glasses:  `<svg viewBox="0 0 100 100"><circle cx="34" cy="52" r="12" fill="none" stroke="${c}" stroke-width="4"/><circle cx="66" cy="52" r="12" fill="none" stroke="${c}" stroke-width="4"/><path d="M46 50 Q50 46 54 50" stroke="${c}" stroke-width="4" fill="none"/><path d="M22 48 L26 46 M78 48 L74 46" stroke="${c}" stroke-width="4"/></svg>`,
+    belt:     `<svg viewBox="0 0 100 100"><rect x="18" y="44" width="64" height="12" rx="2" fill="${c}"/><rect x="44" y="40" width="16" height="20" rx="3" fill="none" stroke="${c}" stroke-width="4"/></svg>`,
+    hairpin:  `<svg viewBox="0 0 100 100"><path d="M28 58 Q50 40 72 58" stroke="${c}" stroke-width="6" fill="none"/><circle cx="28" cy="58" r="5" fill="${c}"/><circle cx="72" cy="58" r="5" fill="${c}"/></svg>`,
+    other:    `<svg viewBox="0 0 100 100"><rect x="30" y="30" width="40" height="40" rx="8" fill="none" stroke="${c}" stroke-width="4"/><circle cx="50" cy="50" r="5" fill="${c}"/></svg>`,
+  };
+  return s[type] || s.top;
+}
+
+/* 图标（用于筛选 chip） */
+function icon(name) {
+  const i = {
+    all:     `<svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>`,
+    top:     `<svg viewBox="0 0 24 24"><path d="M8 4 L5 7 L7 9 L8 8 V20 H16 V8 L17 9 L19 7 L16 4 H14 Q12 6 10 4 Z"/></svg>`,
+    pants:   `<svg viewBox="0 0 24 24"><path d="M7 3 H17 L16 21 H13 L12 10 L11 21 H8 Z"/></svg>`,
+    skirt:   `<svg viewBox="0 0 24 24"><path d="M8 4 H16 L20 20 H4 Z"/></svg>`,
+    dress:   `<svg viewBox="0 0 24 24"><path d="M9 3 L7 6 L9 8 V9 L6 21 H18 L15 9 V8 L17 6 L15 3 H13 Q12 5 11 3 Z"/></svg>`,
+    coat:    `<svg viewBox="0 0 24 24"><path d="M8 3 L5 6 L7 9 V21 H12 V10 M12 10 V21 H17 V9 L19 6 L16 3 H14 Q12 6 10 3 Z"/></svg>`,
+    suit:    `<svg viewBox="0 0 24 24"><path d="M8 3 L6 6 V21 H11 V12 H13 V21 H18 V6 L16 3 L12 8 Z"/></svg>`,
+    shoe:    `<svg viewBox="0 0 24 24"><path d="M3 14 H10 Q13 14 15 16 L20 17 Q21 18 21 19 V20 H3 Z"/></svg>`,
+    bag:     `<svg viewBox="0 0 24 24"><path d="M6 9 H18 L19 21 H5 Z"/><path d="M9 9 Q9 5 12 5 Q15 5 15 9"/></svg>`,
+    hat:     `<svg viewBox="0 0 24 24"><path d="M4 17 Q12 14 20 17"/><path d="M8 17 Q8 6 12 6 Q16 6 16 17"/></svg>`,
+    jewel:   `<svg viewBox="0 0 24 24"><path d="M12 5 L17 10 L12 20 L7 10 Z"/></svg>`,
+    glasses: `<svg viewBox="0 0 24 24"><circle cx="7" cy="13" r="4"/><circle cx="17" cy="13" r="4"/><path d="M11 12 Q12 10 13 12"/><path d="M3 11 L4 10 M21 11 L20 10"/></svg>`,
+    belt:    `<svg viewBox="0 0 24 24"><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="10" y="8" width="4" height="8" rx="1"/></svg>`,
+    hairpin: `<svg viewBox="0 0 24 24"><path d="M5 15 Q12 7 19 15"/><circle cx="5" cy="15" r="1.6"/><circle cx="19" cy="15" r="1.6"/></svg>`,
+    other:   `<svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg>`,
+  };
+  return i[name] || i.all;
+}
+
+/* ============================================================
+   Mock 数据
+   ============================================================ */
+const COLORS = {
+  cream:'#e8e2d4', beige:'#d8cbb4', camel:'#c19a6b', white:'#f4f2ec',
+  black:'#3a3733', navy:'#3b4a5e', grey:'#b7b3ab', olive:'#8a8a6a',
+  denim:'#6f88a3', brown:'#8a6a4f', rust:'#b5714c', gold:'#c9a84c'
+};
+
+/* cat 与筛选分类一一对应；mat 材质 / brand 品牌 / last 上次穿(天前) / season 季节标签 / formal 正式度 */
+const GARMENTS = [
+  {n:'米白针织衫', t:'knit', c:COLORS.cream, cat:'上衣', tag:'秋冬', wear:12, price:399, mat:'羊毛混纺', brand:'COS', last:3, seasons:['秋','冬'], formal:'日常'},
+  {n:'白色棉衬衫', t:'shirt', c:COLORS.white, cat:'上衣', tag:'四季', wear:24, price:259, mat:'纯棉', brand:'Uniqlo', last:1, seasons:['春','夏','秋','冬'], formal:'正式'},
+  {n:'黑色高领', t:'knit', c:COLORS.black, cat:'上衣', tag:'冬', wear:8, price:329, mat:'美利奴羊毛', brand:'COS', last:9, seasons:['冬'], formal:'日常'},
+  {n:'燕麦色卫衣', t:'top', c:COLORS.beige, cat:'上衣', tag:'春秋', wear:18, price:299, mat:'棉质卫衣布', brand:'无印良品', last:5, seasons:['春','秋'], formal:'休闲'},
+  {n:'黑色直筒裤', t:'pants', c:COLORS.black, cat:'裤子', tag:'四季', wear:30, price:399, mat:'醋酸混纺', brand:'COS', last:2, seasons:['春','夏','秋','冬'], formal:'正式'},
+  {n:'米色阔腿裤', t:'pants', c:COLORS.beige, cat:'裤子', tag:'春秋', wear:16, price:359, mat:'亚麻混纺', brand:'Massimo', last:6, seasons:['春','秋'], formal:'日常'},
+  {n:'牛仔裤', t:'pants', c:COLORS.denim, cat:'裤子', tag:'四季', wear:28, price:499, mat:'牛仔布', brand:'Levi\'s', last:4, seasons:['春','夏','秋','冬'], formal:'休闲'},
+  {n:'卡其半身裙', t:'skirt', c:COLORS.camel, cat:'半身裙', tag:'春秋', wear:7, price:329, mat:'棉质斜纹', brand:'Uniqlo', last:21, seasons:['春','秋'], formal:'日常'},
+  {n:'黑色百褶裙', t:'skirt', c:COLORS.black, cat:'半身裙', tag:'四季', wear:11, price:389, mat:'聚酯纤维', brand:'ZARA', last:14, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'白色连衣裙', t:'dress', c:COLORS.white, cat:'连衣裙', tag:'夏', wear:5, price:599, mat:'真丝', brand:'Maje', last:18, seasons:['夏'], formal:'正式'},
+  {n:'碎花连衣裙', t:'dress', c:COLORS.rust, cat:'连衣裙', tag:'夏', wear:4, price:659, mat:'雪纺', brand:'Sandro', last:32, seasons:['夏'], formal:'日常'},
+  {n:'驼色大衣', t:'coat', c:COLORS.camel, cat:'外套', tag:'冬', wear:6, price:1299, mat:'羊毛羊绒', brand:'MaxMara', last:120, seasons:['冬'], formal:'正式'},
+  {n:'藏青西装外套', t:'coat', c:COLORS.navy, cat:'外套', tag:'四季', wear:9, price:899, mat:'羊毛混纺', brand:'Theory', last:7, seasons:['春','秋','冬'], formal:'正式'},
+  {n:'牛仔外套', t:'coat', c:COLORS.denim, cat:'外套', tag:'春秋', wear:14, price:459, mat:'牛仔布', brand:'Levi\'s', last:10, seasons:['春','秋'], formal:'休闲'},
+  {n:'灰色西装套装', t:'suit', c:COLORS.grey, cat:'套装', tag:'四季', wear:6, price:1099, mat:'羊毛混纺', brand:'Theory', last:25, seasons:['春','秋','冬'], formal:'正式'},
+  {n:'黑色小皮鞋', t:'shoe', c:COLORS.black, cat:'鞋子', tag:'四季', wear:22, price:699, mat:'牛皮', brand:'ecco', last:2, seasons:['春','夏','秋','冬'], formal:'正式'},
+  {n:'白色运动鞋', t:'shoe', c:COLORS.white, cat:'鞋子', tag:'四季', wear:40, price:899, mat:'皮革', brand:'Adidas', last:1, seasons:['春','夏','秋','冬'], formal:'休闲'},
+  {n:'棕色乐福鞋', t:'shoe', c:COLORS.brown, cat:'鞋子', tag:'春秋', wear:3, price:759, mat:'磨砂皮', brand:'GH Bass', last:45, seasons:['春','秋'], formal:'日常'},
+  {n:'焦糖托特包', t:'bag', c:COLORS.rust, cat:'包包', tag:'四季', wear:20, price:1099, mat:'植鞣皮', brand:'Polene', last:3, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'黑色链条包', t:'bag', c:COLORS.black, cat:'包包', tag:'四季', wear:15, price:1599, mat:'羊皮', brand:'小CK', last:8, seasons:['春','夏','秋','冬'], formal:'正式'},
+  {n:'米色贝雷帽', t:'hat', c:COLORS.beige, cat:'帽子', tag:'春秋', wear:9, price:159, mat:'羊毛毡', brand:'无印良品', last:16, seasons:['春','秋','冬'], formal:'休闲'},
+  {n:'金色耳环', t:'jewel', c:COLORS.gold, cat:'首饰', tag:'四季', wear:26, price:299, mat:'合金镀金', brand:'APM', last:2, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'圆框眼镜', t:'glasses', c:COLORS.black, cat:'眼镜', tag:'四季', wear:33, price:459, mat:'醋酸板材', brand:'Gentle', last:0, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'棕色皮带', t:'belt', c:COLORS.brown, cat:'腰带', tag:'四季', wear:12, price:229, mat:'牛皮', brand:'无印良品', last:7, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'珍珠发夹', t:'hairpin', c:COLORS.cream, cat:'发饰', tag:'四季', wear:8, price:89, mat:'合金珍珠', brand:'饰品店', last:12, seasons:['春','夏','秋','冬'], formal:'日常'},
+  {n:'真丝方巾', t:'other', c:COLORS.rust, cat:'其他', tag:'四季', wear:6, price:199, mat:'真丝', brand:'蔻依', last:28, seasons:['春','夏','秋','冬'], formal:'日常'},
+];
+
+/* 两组筛选：服装 / 配饰，key 与 GARMENTS.cat 对应 */
+const FILTERS = {
+  clothing: [
+    {label:'全部', ico:'all', key:'__ALL_CLOTHING__'},
+    {label:'上衣', ico:'top', key:'上衣'},
+    {label:'裤子', ico:'pants', key:'裤子'},
+    {label:'半身裙', ico:'skirt', key:'半身裙'},
+    {label:'连衣裙', ico:'dress', key:'连衣裙'},
+    {label:'外套', ico:'coat', key:'外套'},
+    {label:'套装', ico:'suit', key:'套装'},
+    {label:'鞋子', ico:'shoe', key:'鞋子'},
+  ],
+  accessory: [
+    {label:'包包', ico:'bag', key:'包包'},
+    {label:'帽子', ico:'hat', key:'帽子'},
+    {label:'首饰', ico:'jewel', key:'首饰'},
+    {label:'眼镜', ico:'glasses', key:'眼镜'},
+    {label:'腰带', ico:'belt', key:'腰带'},
+    {label:'发饰', ico:'hairpin', key:'发饰'},
+    {label:'其他', ico:'other', key:'其他'},
+  ]
+};
+const CLOTHING_CATS = ['上衣','裤子','半身裙','连衣裙','外套','套装','鞋子'];
+
+/* 推荐搭配组合（按索引引用衣物） */
+const g = GARMENTS;
+const OUTFITS = [
+  { tag:'通勤 · 简约', match:'96%', items:[g[1],g[12],g[4],g[15]],
+    reason:'今天 <b>28° 多云</b>，早晚微凉。白衬衫叠藏青西装外套，脱穿方便；<b>黑色直筒裤</b>利落，整体是干净的通勤基调。' },
+  { tag:'休闲 · 松弛', match:'92%', items:[g[3],g[13],g[6],g[16]],
+    reason:'周末不必拘谨。燕麦卫衣配牛仔外套是<b>邻近色的柔和过渡</b>，白运动鞋提亮，适合逛街和咖啡。' },
+  { tag:'约会 · 温柔', match:'94%', items:[g[0],g[5],g[17],g[18]],
+    reason:'米白针织配米色阔腿裤是<b>同色系高级搭法</b>，焦糖包与乐福鞋点出重色，温柔又有层次。' },
+];
+
+/* 智能搭配维度数据 */
+const MATCH = {
+  occasion: {
+    chips:['通勤','约会','旅行','运动','聚会'],
+    cards:[
+      {title:'通勤 · 干练三件套', score:'96 分', items:[g[1],g[12],g[4]]},
+      {title:'通勤 · 针织松弛感', score:'91 分', items:[g[0],g[5],g[17]]},
+      {title:'通勤 · 套装利落', score:'88 分', items:[g[14],g[15],g[22]]},
+    ]
+  },
+  style: {
+    chips:['极简','复古','街头','法式','学院'],
+    cards:[
+      {title:'极简 · 同色系', score:'95 分', items:[g[0],g[5],g[17]]},
+      {title:'极简 · 黑白灰', score:'93 分', items:[g[2],g[4],g[15]]},
+      {title:'极简 · 大地色', score:'90 分', items:[g[3],g[7],g[18]]},
+    ]
+  },
+  season: {
+    chips:['春','夏','秋','冬'],
+    cards:[
+      {title:'初秋 · 叠穿过渡', score:'94 分', items:[g[0],g[13],g[6]]},
+      {title:'深秋 · 大衣造型', score:'92 分', items:[g[2],g[11],g[4]]},
+      {title:'盛夏 · 连衣裙', score:'89 分', items:[g[9],g[20],g[16]]},
+    ]
+  }
+};
+
+/* 穿搭日记记录：day 当月第几天 / items 引用衣物索引 / occ 场合 / temp 当天温度 */
+const DIARY = [
+  {day:11, occ:'通勤', temp:'27°', items:[1,12,4,15]},
+  {day:9,  occ:'约会', temp:'29°', items:[0,5,17,18]},
+  {day:6,  occ:'周末', temp:'26°', items:[3,13,6,16]},
+  {day:4,  occ:'通勤', temp:'25°', items:[2,4,15,19]},
+  {day:1,  occ:'聚会', temp:'28°', items:[9,20,16]},
+];
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function thumb(item, showName=true) {
+  return `<div class="item-thumb">${garmentSVG(item.t, item.c)}${showName?`<span class="name">${item.n}</span>`:''}</div>`;
+}
+
+let outfitIdx = 0;
+function renderTodayOutfit() {
+  const o = OUTFITS[outfitIdx];
+  document.getElementById('today-outfit').innerHTML = `
+    <div class="outfit-head">
+      <span class="tag dark">${o.tag}</span>
+      <span style="font-size:12px;color:var(--ink-3)">匹配度 ${o.match}</span>
+    </div>
+    <div class="outfit-grid">${o.items.map(it=>thumb(it)).join('')}</div>
+    <div class="reason">${o.reason}</div>
+    <div class="outfit-actions">
+      <button class="btn ghost" onclick="tryonFromOutfit(${outfitIdx})">试穿看</button>
+      <button class="btn primary" onclick="toast('已记录为今日穿搭')">今天就穿它</button>
+    </div>`;
+}
+document.getElementById('refresh-outfit').onclick = () => {
+  outfitIdx = (outfitIdx + 1) % OUTFITS.length;
+  renderTodayOutfit();
+};
+
+/* 衣橱筛选 */
+let closetFilter = '__ALL_CLOTHING__';
+function renderFilters() {
+  document.getElementById('chips-clothing').innerHTML = FILTERS.clothing.map(f =>
+    `<div class="chip ${f.key===closetFilter?'active':''}" onclick="filterCloset('${f.key}')">${icon(f.ico)}${f.label}</div>`).join('');
+  document.getElementById('chips-accessory').innerHTML = FILTERS.accessory.map(f =>
+    `<div class="chip ${f.key===closetFilter?'active':''}" onclick="filterCloset('${f.key}')">${icon(f.ico)}${f.label}</div>`).join('');
+}
+function filterCloset(key){ closetFilter = key; renderFilters(); renderCloset(); }
+function renderCloset() {
+  let list;
+  if (closetFilter === '__ALL_CLOTHING__') list = GARMENTS.filter(x=>CLOTHING_CATS.includes(x.cat));
+  else list = GARMENTS.filter(x=>x.cat===closetFilter);
+  document.getElementById('closet-count').textContent = `共 ${GARMENTS.length} 件`;
+  const grid = document.getElementById('closet-grid');
+  if (!list.length) { grid.innerHTML = `<div class="empty">这个分类还没有衣物，点下方按钮添加</div>`; return; }
+  grid.innerHTML = list.map((x,i)=>`
+    <div class="garment" style="animation-delay:${i*0.03}s" onclick="openDetail(${GARMENTS.indexOf(x)})">
+      <div class="pic">${garmentSVG(x.t,x.c)}</div>
+      <div class="info">
+        <div class="gname">${x.n}</div>
+        <div class="gmeta"><span class="dot" style="background:${x.c}"></span>${x.cat} · ${x.tag}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* 智能搭配 */
+let matchDim = 'occasion';
+function renderMatch() {
+  const data = MATCH[matchDim];
+  document.getElementById('match-chips').innerHTML =
+    data.chips.map((c,i)=>`<div class="chip ${i===0?'active':''}" onclick="pickMatchChip(this)">${c}</div>`).join('');
+  document.getElementById('match-list').innerHTML = data.cards.map((c,i)=>`
+    <div class="match-card">
+      <div class="mc-head">
+        <span class="mc-title">${c.title}</span>
+        <span class="score">${c.score}</span>
+      </div>
+      <div class="mc-strip">${c.items.map(it=>thumb(it,false)).join('')}</div>
+      <div class="mc-foot">
+        <button class="tryon-entry" onclick="tryonFromMatch('${matchDim}',${i})"><svg viewBox="0 0 24 24"><path d="M4 20a8 8 0 0116 0"/><circle cx="12" cy="8" r="4"/></svg>试穿看</button>
+      </div>
+    </div>`).join('');
+}
+function pickMatchChip(el){
+  el.parentNode.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderMatch();
+}
+document.getElementById('match-seg').querySelectorAll('button').forEach(b=>{
+  b.onclick = () => {
+    document.querySelectorAll('#match-seg button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    matchDim = b.dataset.dim;
+    renderMatch();
+  };
+});
+
+/* 看板 */
+function renderBoard() {
+  const cats = {};
+  GARMENTS.forEach(x=>cats[x.cat]=(cats[x.cat]||0)+1);
+  const sorted = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  const max = Math.max(...sorted.map(x=>x[1]));
+  document.getElementById('cat-bars').innerHTML = sorted.map(([k,v])=>`
+    <div class="bar-row">
+      <span class="bl">${k}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${v/max*100}%"></span></span>
+      <span class="bv">${v}</span>
+    </div>`).join('');
+
+  const colorGroups = [
+    {l:'白/米', c:'#e8e2d4', n:8}, {l:'黑/灰', c:'#3a3733', n:7},
+    {l:'大地色', c:'#c19a6b', n:6}, {l:'蓝色系', c:'#3b4a5e', n:5}
+  ];
+  const total = colorGroups.reduce((s,x)=>s+x.n,0);
+  document.getElementById('color-dist').innerHTML = colorGroups.map(x=>
+    `<span style="flex:${x.n};background:${x.c}"></span>`).join('');
+  document.getElementById('color-legend').innerHTML = colorGroups.map(x=>
+    `<span class="cl"><span class="dot" style="background:${x.c}"></span>${x.l} · ${Math.round(x.n/total*100)}%</span>`).join('');
+
+  const withCost = GARMENTS.map(x=>({...x, per:Math.round(x.price/Math.max(x.wear,1))}))
+    .sort((a,b)=>a.per-b.per);
+  const show = [...withCost.slice(0,2), ...withCost.slice(-2).reverse()];
+  document.getElementById('cost-list').innerHTML = show.map(x=>`
+    <div class="cost-item">
+      <div><div class="ci-name">${x.n}</div><div class="ci-sub">已穿 ${x.wear} 次 · ¥${x.price}</div></div>
+      <div class="ci-val ${x.per<=25?'good':x.per>=100?'bad':''}">¥${x.per}/次</div>
+    </div>`).join('');
+}
+
+/* ============================================================
+   视图切换：首页 + 衣橱/搭配/看板/设置 独立视图（带返回）
+   ============================================================ */
+const screen = document.getElementById('screen');
+function openView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  screen.scrollTop = 0;
+  closeSuggest();
+}
+function goHome(){ openView('home'); }
+function openSettings(){ renderManage(); openView('settings'); }
+
+/* ============================================================
+   添加衣物弹层
+   ============================================================ */
+function openSheet(){
+  document.getElementById('sheet-mask').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+function closeSheet(){
+  document.getElementById('sheet-mask').classList.remove('show');
+  document.getElementById('sheet').classList.remove('show');
+  setTimeout(resetSheet, 340);
+}
+function resetSheet(){
+  document.getElementById('ai-result').style.display='none';
+  document.getElementById('dz-idle').style.display='block';
+  document.getElementById('dz-loading').style.display='none';
+  document.getElementById('dropzone').classList.remove('loading');
+}
+
+function simulateUpload() {
+  const idle = document.getElementById('dz-idle');
+  const loading = document.getElementById('dz-loading');
+  const dz = document.getElementById('dropzone');
+  const result = document.getElementById('ai-result');
+  if (dz.classList.contains('loading')) return;
+  result.style.display = 'none';
+  idle.style.display = 'none';
+  loading.style.display = 'block';
+  dz.classList.add('loading');
+  const steps = ['抠图去背景…','识别品类：针织衫','提取主色：米白','分析材质与厚薄','匹配适用季节'];
+  let i = 0;
+  const step = document.getElementById('dz-step');
+  const timer = setInterval(()=>{
+    i++;
+    if (i < steps.length) { step.textContent = steps[i]; }
+    else {
+      clearInterval(timer);
+      loading.style.display='none'; idle.style.display='block'; dz.classList.remove('loading');
+      document.getElementById('ai-pv').innerHTML = garmentSVG('knit', COLORS.cream);
+      result.style.display = 'block';
+      result.scrollIntoView({behavior:'smooth', block:'nearest'});
+    }
+  }, 620);
+}
+document.querySelectorAll('.pill').forEach(p=>{
+  p.onclick = () => { if(p.parentNode.querySelector('.on') && p.parentNode.children.length<=3){p.parentNode.querySelectorAll('.pill').forEach(x=>x.classList.remove('on'));} p.classList.toggle('on'); };
+});
+function saveGarment(){
+  toast('米白针织衫 已存入衣橱 ✓');
+  closeSheet();
+  setTimeout(()=>openView('closet'), 400);
+}
+
+/* ============================================================
+   搜索：输入即出联想标签（关键词 / 风格 / 场合）
+   ============================================================ */
+const SUGGESTS = [
+  {k:'风格', v:'极简'}, {k:'风格', v:'法式'}, {k:'风格', v:'复古'},
+  {k:'场合', v:'通勤'}, {k:'场合', v:'约会'}, {k:'场合', v:'旅行'},
+  {k:'颜色', v:'米白'}, {k:'颜色', v:'黑色'}, {k:'品类', v:'连衣裙'}, {k:'品类', v:'外套'},
+];
+const searchInput = document.getElementById('search-input');
+const suggestBox = document.getElementById('suggest');
+const searchClr = document.getElementById('search-clr');
+function renderSuggest(kw){
+  const list = kw ? SUGGESTS.filter(s=>s.v.includes(kw)||s.k.includes(kw)) : SUGGESTS;
+  document.getElementById('sug-tags').innerHTML =
+    (list.length?list:SUGGESTS).map(s=>
+      `<span class="sug-tag" onclick="doSearch('${s.v}')"><span class="k">${s.k}</span>${s.v}</span>`).join('');
+}
+function openSuggest(){ renderSuggest(searchInput.value.trim()); suggestBox.classList.add('show'); }
+function closeSuggest(){ suggestBox.classList.remove('show'); }
+function doSearch(v){
+  searchInput.value = v; searchClr.style.display = 'block';
+  closeSuggest(); runSearch(v);
+}
+searchInput.addEventListener('focus', openSuggest);
+searchInput.addEventListener('input', () => {
+  searchClr.style.display = searchInput.value ? 'block' : 'none';
+  renderSuggest(searchInput.value.trim());
+});
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { closeSuggest(); runSearch(searchInput.value); }
+});
+searchClr.onclick = () => { searchInput.value=''; searchClr.style.display='none'; renderSuggest(''); searchInput.focus(); };
+document.addEventListener('click', e => {
+  if (!e.target.closest('.searchwrap')) closeSuggest();
+});
+
+/* ============================================================
+   设置：衣柜名称 + 分类管理（增删）
+   ============================================================ */
+function saveClosetName(){
+  const v = document.getElementById('closet-name-input').value.trim() || '我的衣橱';
+  document.getElementById('brand-name').textContent = v;
+  toast('衣柜名称已更新');
+}
+function renderManage(){
+  const build = (groupKey, containerId) => {
+    document.getElementById(containerId).innerHTML = FILTERS[groupKey]
+      .filter(f => f.key !== '__ALL_CLOTHING__')
+      .map(f => `
+        <span class="cat-tag">${icon(f.ico)}${f.label}<span class="del" onclick="delCat('${groupKey}','${f.key}')">×</span></span>`).join('');
+  };
+  build('clothing', 'manage-clothing');
+  build('accessory', 'manage-accessory');
+}
+function delCat(groupKey, key){
+  FILTERS[groupKey] = FILTERS[groupKey].filter(f => f.key !== key);
+  if (groupKey === 'clothing') {
+    const idx = CLOTHING_CATS.indexOf(key);
+    if (idx > -1) CLOTHING_CATS.splice(idx, 1);
+    if (closetFilter === key) closetFilter = '__ALL_CLOTHING__';
+  } else if (closetFilter === key) {
+    closetFilter = '__ALL_CLOTHING__';
+  }
+  renderManage(); renderFilters(); renderCloset();
+  toast('已移除分类');
+}
+function addCat(groupKey){
+  const name = (prompt('新分类名称') || '').trim();
+  if (!name) return;
+  if (FILTERS[groupKey].some(f => f.key === name)) { toast('该分类已存在'); return; }
+  FILTERS[groupKey].push({ label:name, ico:'other', key:name });
+  if (groupKey === 'clothing') CLOTHING_CATS.push(name);
+  renderManage(); renderFilters();
+  toast('已添加分类');
+}
+
+/* ============================================================
+   “美照”占位：柔和渐变背景 + 人像剪影（demo 用，正式版是真实照片）
+   ============================================================ */
+let gradSeq = 0;
+function photoSVG(tone){
+  // tone: 决定渐变色调，让不同记录的照片色彩有区分
+  const grads = [
+    ['#d8cdbf','#b9a98f'], ['#c9d2cf','#9fb0ab'], ['#d6c6c0','#b59a92'],
+    ['#cdd0d8','#a3a9b8'], ['#d9d2c2','#c0b28c'],
+  ];
+  const [a,b] = grads[(tone ?? gradSeq++) % grads.length];
+  const id = 'pg' + Math.random().toString(36).slice(2,7);
+  return `<svg viewBox="0 0 100 130" preserveAspectRatio="xMidYMax meet" style="width:100%;height:100%">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/>
+    </linearGradient></defs>
+    <rect width="100" height="130" fill="url(#${id})"/>
+    <circle cx="50" cy="52" r="17" fill="rgba(255,255,255,.34)"/>
+    <path d="M22 130 Q22 92 50 92 Q78 92 78 130 Z" fill="rgba(255,255,255,.34)"/>
+  </svg>`;
+}
+
+/* ============================================================
+   衣物详情页：一张大图 + 有体感的数字 + 档案 + 相关搭配
+   ============================================================ */
+function openDetail(idx){
+  renderDetail(idx);
+  openView('detail');
+}
+function renderDetail(idx){
+  const x = GARMENTS[idx];
+  const per = Math.round(x.price / Math.max(x.wear,1));
+  const lastTxt = x.last === 0 ? '今天' : `${x.last} 天前`;
+  const group = CLOTHING_CATS.includes(x.cat) ? '服装' : '配饰';
+  // 找出包含这件单品的搭配（今日推荐 + 智能搭配）
+  const relatedLooks = [];
+  OUTFITS.forEach(o => { if (o.items.includes(x)) relatedLooks.push({title:o.tag, items:o.items}); });
+  Object.values(MATCH).forEach(dim => dim.cards.forEach(c => {
+    if (c.items.includes(x) && relatedLooks.length < 6) relatedLooks.push({title:c.title, items:c.items});
+  }));
+
+  document.getElementById('detail-body').innerHTML = `
+    <div class="detail-hero">
+      ${garmentSVG(x.t, x.c)}
+      <span class="heart" id="detail-heart" onclick="this.classList.toggle('on');toast(this.classList.contains('on')?'已加入最爱':'已取消最爱')">
+        <svg viewBox="0 0 24 24"><path d="M12 20s-7-4.5-9.5-9C1 8 2.5 4.5 6 4.5c2.2 0 3.5 1.6 4 2.5.5-.9 1.8-2.5 4-2.5 3.5 0 5 3.5 3.5 6.5C19 15.5 12 20 12 20z"/></svg>
+      </span>
+    </div>
+
+    <div class="detail-title">${x.n}</div>
+    <div class="detail-cat"><span class="dot" style="background:${x.c}"></span>${group} · ${x.cat}</div>
+
+    <div class="detail-stats">
+      <div class="ds"><div class="dn">${x.wear}<small> 次</small></div><div class="dl">累计穿着</div></div>
+      <div class="ds"><div class="dn">¥${per}<small>/次</small></div><div class="dl">单次成本</div></div>
+      <div class="ds"><div class="dn">${lastTxt}</div><div class="dl">上次穿</div></div>
+    </div>
+
+    <div class="panel">
+      <h3>基本档案</h3>
+      <div class="spec-grid">
+        <div class="spec"><span class="sk">材质</span><span class="sv">${x.mat}</span></div>
+        <div class="spec"><span class="sk">品牌</span><span class="sv">${x.brand}</span></div>
+        <div class="spec"><span class="sk">价格</span><span class="sv">¥${x.price}</span></div>
+        <div class="spec"><span class="sk">正式度</span><span class="sv">${x.formal}</span></div>
+        <div class="spec"><span class="sk">适用季节</span><span class="sv">${x.seasons.join(' ')}</span></div>
+        <div class="spec"><span class="sk">主色调</span><span class="sv"><span class="dot" style="background:${x.c};vertical-align:middle"></span></span></div>
+      </div>
+    </div>
+
+    ${relatedLooks.length ? `
+    <div class="sec-title" style="margin-top:8px"><h2 style="font-size:15px">出现在这些搭配里</h2><span class="sub2">${relatedLooks.length} 套</span></div>
+    <div class="look-strip">
+      ${relatedLooks.map(l=>`
+        <div class="look-mini" onclick="toast('搭配：${l.title}')">
+          <div class="lp">${lookCollageSVG(l.items)}</div>
+          <div class="ll">${l.title}</div>
+        </div>`).join('')}
+    </div>` : `<p class="set-hint" style="margin-top:4px">这件还没进过任何搭配，去「智能搭配」里给它找搭档吧。</p>`}
+
+    <div class="detail-actions">
+      <button class="btn ghost" onclick="toast('已标记为闲置 · 将出现在断舍离清单')">标记闲置</button>
+      <button class="btn primary" onclick="toast('已记录一次穿着，数据已更新')">记一次穿着</button>
+    </div>
+  `;
+}
+
+/* 用一件套内的衣物拼一张 2x2 小拼贴，作为搭配缩略图 */
+function lookCollageSVG(items){
+  const cells = items.slice(0,4);
+  return `<div style="width:100%;height:100%;display:grid;grid-template-columns:1fr 1fr;background:var(--bg)">
+    ${cells.map(it=>`<div style="display:flex;align-items:center;justify-content:center">${garmentSVG(it.t,it.c)}</div>`).join('')}
+  </div>`;
+}
+
+/* ============================================================
+   搜索：跳转到结果页（demo 用简单匹配）
+   ============================================================ */
+function runSearch(kw){
+  kw = (kw||'').trim();
+  if (!kw) return;
+  // 简单匹配：名称 / 分类 / 材质 / 品牌 / 季节 / 状态词
+  let list = GARMENTS.filter(x =>
+    x.n.includes(kw) || x.cat.includes(kw) || x.mat.includes(kw) ||
+    x.brand.includes(kw) || x.seasons.some(s=>kw.includes(s)) ||
+    (kw==='压箱底'||kw==='很久没穿' ? x.last>=30 : false) ||
+    (kw==='高频' ? x.wear>=20 : false)
+  );
+  // 风格/场合词：demo 里没有逐件打标，就用名称近似或全返回一部分
+  if (!list.length) list = GARMENTS.filter(x=>x.n.includes(kw.slice(0,1)));
+
+  document.getElementById('search-summary').innerHTML =
+    `“<b>${kw}</b>” 找到 <b>${list.length}</b> 件`;
+  document.getElementById('search-refine').innerHTML =
+    ['按季节','按颜色','按正式度','仅看高频'].map((r,i)=>
+      `<div class="chip ${i===0?'active':''}" onclick="toast('筛选：${r}')">${r}</div>`).join('');
+  const grid = document.getElementById('search-grid');
+  grid.innerHTML = list.length ? list.map((x,i)=>`
+    <div class="garment" style="animation-delay:${i*0.03}s" onclick="openDetail(${GARMENTS.indexOf(x)})">
+      <div class="pic">${garmentSVG(x.t,x.c)}</div>
+      <div class="info">
+        <div class="gname">${x.n}</div>
+        <div class="gmeta"><span class="dot" style="background:${x.c}"></span>${x.cat} · ${x.tag}</div>
+      </div>
+    </div>`).join('') : `<div class="empty">没找到相关衣物，换个词试试</div>`;
+  openView('search');
+}
+
+/* ============================================================
+   穿搭日记：月历 + 最近记录
+   ============================================================ */
+const TODAY = 12; // demo：当月今天
+function openDiary(){ renderDiary(); openView('diary'); }
+function renderDiary(){
+  renderCalendar();
+  renderDiaryRecent();
+}
+function renderCalendar(){
+  const dows = ['一','二','三','四','五','六','日'];
+  const daysInMonth = 31;
+  const firstDow = 2; // 2026-07-01 是周三 → 前面空 2 格（周一、周二）
+  const byDay = {};
+  DIARY.forEach((d,i)=>byDay[d.day] = {...d, seq:i});
+  let html = dows.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  for (let i=0;i<firstDow;i++) html += `<div class="cal-cell empty"></div>`;
+  for (let day=1; day<=daysInMonth; day++){
+    const rec = byDay[day];
+    if (rec){
+      html += `<div class="cal-cell has ${day===TODAY?'today':''}" onclick="toast('${day} 日 · ${rec.occ}')">
+        <span class="cd">${day}</span>${photoSVG(rec.seq)}</div>`;
+    } else {
+      html += `<div class="cal-cell ${day===TODAY?'today':''}">${day}</div>`;
+    }
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+function renderDiaryRecent(){
+  document.getElementById('diary-recent').innerHTML = DIARY.map(d=>`
+    <div class="diary-item" onclick="toast('7月${d.day}日 · ${d.occ}')">
+      <div class="dp photo">${photoSVG(d.day)}</div>
+      <div class="di-b">
+        <div class="di-t">7 月 ${d.day} 日 · ${d.occ}</div>
+        <div class="di-m">${d.temp} · 用了 ${d.items.length} 件单品</div>
+        <div class="di-items">${d.items.map(i=>`<span class="mini-dot" style="background:${GARMENTS[i].c}"></span>`).join('')}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ============================================================
+   记录穿搭弹层：拍照 → 猜单品 → 确认
+   ============================================================ */
+let logPicked = new Set();
+function openLog(){
+  // demo：预填一张美照 + 系统「猜」出今天可能穿的几件（默认选中）
+  document.getElementById('log-selfie').innerHTML = photoSVG(2);
+  const guess = [1,12,4,15]; // 系统识别结果
+  logPicked = new Set(guess);
+  // 候选池：识别到的 + 几件其它常穿，供增减
+  const pool = [...guess, 0, 5, 16, 17];
+  document.getElementById('log-pick').innerHTML = pool.map(i=>`
+    <div class="lpi ${logPicked.has(i)?'on':''}" onclick="toggleLogPick(${i}, this)">
+      ${garmentSVG(GARMENTS[i].t, GARMENTS[i].c)}
+    </div>`).join('');
+  document.getElementById('log-mask').classList.add('show');
+  document.getElementById('log-sheet').classList.add('show');
+}
+function toggleLogPick(i, el){
+  if (logPicked.has(i)) { logPicked.delete(i); el.classList.remove('on'); }
+  else { logPicked.add(i); el.classList.add('on'); }
+}
+function closeLog(){
+  document.getElementById('log-mask').classList.remove('show');
+  document.getElementById('log-sheet').classList.remove('show');
+}
+function saveLog(){
+  closeLog();
+  toast(`已记录今日穿搭 · 关联 ${logPicked.size} 件单品 ✓`);
+}
+
+/* toast */
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+
+/* ============================================================
+   AI 试穿：全身照打底，单件逐件叠加生成（demo 用叠层模拟）
+   ============================================================ */
+const TRYON_SLOTS = [
+  {slot:'top',    label:'上装', cats:['上衣','连衣裙']},
+  {slot:'bottom', label:'下装', cats:['裤子','半身裙']},
+  {slot:'coat',   label:'外套', cats:['外套','套装']},
+  {slot:'shoe',   label:'鞋子', cats:['鞋子']},
+];
+/* 叠加顺序：coat 最后渲染 → 盖在上装之上，符合真实穿着层次 */
+const TRYON_Z = ['bottom','top','shoe','coat'];
+
+let tryonSelfieReady = false;
+let tryonSlot = 'top';
+let tryonWorn = {}; // slot -> GARMENTS 索引
+
+function slotOf(item){
+  const f = TRYON_SLOTS.find(s => s.cats.includes(item.cat));
+  return f ? f.slot : null;
+}
+
+/* 全身照就绪：显示照片、隐藏引导、亮出重置键 */
+function ensureSelfie(){
+  tryonSelfieReady = true;
+  document.getElementById('tryon-empty').style.display = 'none';
+  document.getElementById('tryon-selfie').innerHTML = photoSVG(3);
+  document.getElementById('tryon-reset').style.display = 'flex';
+}
+function uploadSelfie(){
+  const gen = document.getElementById('tryon-gen');
+  document.getElementById('tryon-gen-s').textContent = '正在处理全身照…';
+  document.getElementById('tryon-empty').style.display = 'none';
+  gen.classList.add('show');
+  setTimeout(()=>{
+    gen.classList.remove('show');
+    ensureSelfie();
+    renderTryonPicker();
+    toast('全身照已就绪，开始试穿吧');
+  }, 1200);
+}
+
+/* 叠加层容器（懒创建，插在 selfie 之后、引导层之前） */
+function tryonLayersEl(){
+  let el = document.getElementById('tryon-layers');
+  if (!el){
+    el = document.createElement('div');
+    el.id = 'tryon-layers';
+    const stage = document.getElementById('tryon-stage');
+    stage.insertBefore(el, document.getElementById('tryon-empty'));
+  }
+  return el;
+}
+function renderTryonLayers(){
+  tryonLayersEl().innerHTML = TRYON_Z.map(slot=>{
+    const gi = tryonWorn[slot];
+    if (gi === undefined) return '';
+    const x = GARMENTS[gi];
+    return `<div class="tryon-layer on" data-slot="${slot}">${garmentSVG(x.t,x.c)}</div>`;
+  }).join('');
+}
+
+/* 当前已穿部位小结 */
+function renderTryonWorn(){
+  const el = document.getElementById('tryon-worn');
+  const worn = TRYON_Z.filter(s => tryonWorn[s] !== undefined);
+  el.innerHTML = worn.map(s=>{
+    const x = GARMENTS[tryonWorn[s]];
+    return `<span class="worn-chip"><span class="wc-thumb">${garmentSVG(x.t,x.c)}</span>${x.n}<span class="wc-x" onclick="removeWorn('${s}')">×</span></span>`;
+  }).join('');
+}
+function removeWorn(s){
+  delete tryonWorn[s];
+  renderTryonLayers(); renderTryonWorn(); renderTryonPicker();
+}
+
+/* 该部位可选单品 */
+function renderTryonPicker(){
+  const conf = TRYON_SLOTS.find(s => s.slot === tryonSlot);
+  const list = GARMENTS.map((x,i)=>({x,i})).filter(o => conf.cats.includes(o.x.cat));
+  document.getElementById('tryon-picker').innerHTML = list.map(o=>`
+    <div class="pick-item ${tryonWorn[tryonSlot]===o.i?'on':''}" onclick="tryOnItem(${o.i})">
+      <div class="pi-pic">${garmentSVG(o.x.t,o.x.c)}</div>
+      <div class="pi-n">${o.x.n}</div>
+    </div>`).join('');
+}
+
+/* 点一件 → 模拟 AI 生成 → 叠加到对应部位 */
+let tryonBusy = false;
+function tryOnItem(gi){
+  if (tryonBusy) return;
+  const x = GARMENTS[gi];
+  const s = slotOf(x) || tryonSlot;
+  ensureSelfie();
+  const gen = document.getElementById('tryon-gen');
+  const label = TRYON_SLOTS.find(t=>t.slot===s)?.label || '单品';
+  document.getElementById('tryon-gen-s').textContent = `替换${label}中`;
+  gen.classList.add('show');
+  tryonBusy = true;
+  setTimeout(()=>{
+    gen.classList.remove('show');
+    tryonBusy = false;
+    tryonWorn[s] = gi;
+    renderTryonLayers(); renderTryonWorn(); renderTryonPicker();
+  }, 1400);
+}
+
+function resetTryon(){
+  tryonWorn = {};
+  renderTryonLayers(); renderTryonWorn(); renderTryonPicker();
+  toast('已全部脱下');
+}
+
+/* 从「今日推荐 / 智能搭配」的一套整套带入试穿：
+   先自动播放一次「AI 生成整套」，直接呈现上身效果，想改哪件再逐件换 */
+function tryonFromItems(items){
+  ensureSelfie();
+  // 先清空，进页面时是空身 + 生成遮罩，营造「正在把整套穿上」的感觉
+  tryonWorn = {};
+  renderTryonLayers(); renderTryonWorn();
+  renderTryonSlots(); renderTryonPicker();
+  openView('tryon');
+
+  const pending = {};
+  items.forEach(it=>{
+    const gi = GARMENTS.indexOf(it);
+    const s = slotOf(it);
+    if (s && pending[s] === undefined) pending[s] = gi;
+  });
+
+  const gen = document.getElementById('tryon-gen');
+  document.getElementById('tryon-gen-s').textContent = '正在生成整套上身效果…';
+  gen.classList.add('show');
+  tryonBusy = true;
+  setTimeout(()=>{
+    gen.classList.remove('show');
+    tryonBusy = false;
+    tryonWorn = pending;
+    renderTryonLayers(); renderTryonWorn(); renderTryonPicker();
+    toast('整套已上身，想换哪件点一下就好');
+  }, 1600);
+}
+function tryonFromOutfit(idx){ tryonFromItems(OUTFITS[idx].items); }
+function tryonFromMatch(dim, idx){ tryonFromItems(MATCH[dim].cards[idx].items); }
+
+function tryonToDiary(){
+  if (!Object.keys(tryonWorn).length){ toast('先试穿几件再保存吧'); return; }
+  toast('已存为今日穿搭 ✓');
+  setTimeout(()=>openDiary(), 550);
+}
+
+/* 部位切换：渲染 .slot-tab 到 #tryon-slots */
+const SLOT_ICON = { top:'top', bottom:'pants', coat:'coat', shoe:'shoe' };
+function renderTryonSlots(){
+  document.getElementById('tryon-slots').innerHTML = TRYON_SLOTS.map(s=>`
+    <button class="slot-tab ${s.slot===tryonSlot?'active':''}" onclick="pickTryonSlot('${s.slot}')">
+      ${icon(SLOT_ICON[s.slot])}${s.label}
+    </button>`).join('');
+}
+function pickTryonSlot(slot){
+  tryonSlot = slot;
+  renderTryonSlots();
+  renderTryonPicker();
+}
+
+/* init */
+renderTodayOutfit();
+renderFilters(); renderCloset();
+renderMatch();
+renderBoard();
+renderDiary();
+renderTryonSlots(); renderTryonPicker();
+</script>
+</body>
+</html>
