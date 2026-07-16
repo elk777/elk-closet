@@ -1,7 +1,14 @@
 <template>
   <view class="home">
-    <!-- 顶栏：衣柜名 + 件数 + 今日推荐入口 -->
-    <view class="topbar">
+    <!-- 顶栏：衣柜名 + 件数 + 今日推荐入口。
+         custom 导航栏下须自避状态栏（下移）与微信胶囊（右侧留白），避免被刘海/胶囊覆盖 -->
+    <view
+      class="topbar"
+      :style="{
+        paddingTop: statusBarHeight + 12 + 'px',
+        paddingRight: 20 + menuInset + 'px',
+      }"
+    >
       <view class="brand">
         <view class="logo">衣</view>
         <text class="name">{{ closetName }}</text>
@@ -107,6 +114,10 @@ import GarmentCard from '../../components/garment/GarmentCard.vue';
 import AppLoading from '../../components/base/AppLoading.vue';
 import { listGarments } from '../../api/garment.api';
 import { useUserStore } from '../../store/user';
+import { useSafeArea } from '../../composables/useSafeArea';
+
+/** custom 导航栏下的安全区：顶栏下移避状态栏、右侧留白避微信胶囊 */
+const { statusBarHeight, menuInset } = useSafeArea();
 
 /** “全部”筛选标识（用不会与品类冲突的常量） */
 const ALL = '__all__';
@@ -296,7 +307,9 @@ function goToday() {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 40px;
+  /* 避让全面屏底部 home indicator，横条机型也不会压住按钮 */
+  bottom: calc(40px + constant(safe-area-inset-bottom));
+  bottom: calc(40px + env(safe-area-inset-bottom));
   padding: 14px 28px;
   border-radius: 30px;
   background: $zy-accent;
