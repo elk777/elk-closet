@@ -1,0 +1,27 @@
+/**
+ * 全局基础样式：页面级默认，配合 tokens 使用。
+ * 在 App.vue 全局引入一次即可。
+ */
+
+@import './tokens.scss';
+
+page {
+  background: $zy-bg;
+  color: $zy-ink;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro SC', 'PingFang SC',
+    'Segoe UI', Roboto, Helvetica, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+// 通用容器内边距
+.zy-page {
+  padding: $zy-gap-lg;
+}
+
+// 文字省略（单行）
+.zy-ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

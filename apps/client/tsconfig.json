@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // uni-app + Vue3 + Vite 所需的有效编译项（原继承的 @vue/tsconfig@0.1.3 含
+    // TS5.6 已移除的 preserveValueImports / importsNotUsedAsValues，会报 TS5102，
+    // 故不再继承旧基座，直接内联并用 verbatimModuleSyntax 取代那两项）。
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "useDefineForClassFields": true,
+    "jsx": "preserve",
+    "strict": true,
+    "noImplicitThis": true,
+    "isolatedModules": true,
+    // 强制类型导入用 import type（替代已移除的 preserveValueImports + importsNotUsedAsValues）
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "lib": ["esnext", "dom"],
+    "types": ["@dcloudio/types"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"]
+}

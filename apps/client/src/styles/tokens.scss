@@ -1,0 +1,32 @@
+/**
+ * 设计 token：从 demo.html 提取的视觉变量（单一事实来源）。
+ *
+ * 知衣风格基调：米白背景 + 墨黑主色，大圆角、克制阴影、以衣物为主体。
+ * 所有组件只引用这里的变量，不写死颜色/圆角，保证全局视觉一致、改主题只改一处。
+ *
+ * 用法：组件 <style lang="scss"> 里 @import '@/styles/tokens.scss' 后用 $zy-* 变量。
+ */
+
+// ── 颜色 ──
+$zy-bg: #f6f5f2; // 页面背景（米白）
+$zy-surface: #ffffff; // 卡片/浮层表面
+$zy-ink: #1c1b19; // 主文字（近黑）
+$zy-ink-2: #6b6862; // 次要文字
+$zy-ink-3: #a8a49c; // 占位/弱提示
+$zy-line: #ecebe8; // 分隔线/边框
+$zy-accent: #2f2b26; // 强调（墨黑，按钮/深色标签）
+$zy-danger: #c0592c; // 危险/删除
+
+// ── 圆角 ──
+$zy-radius: 20px; // 大圆角（卡片/弹层）
+$zy-radius-sm: 14px; // 小圆角（输入框/图片）
+$zy-radius-pill: 20px; // 胶囊（标签）
+
+// ── 阴影 ──
+$zy-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+$zy-shadow-soft: 0 2px 12px rgba(0, 0, 0, 0.04);
+
+// ── 间距 ──
+$zy-gap-sm: 8px;
+$zy-gap: 14px;
+$zy-gap-lg: 20px;

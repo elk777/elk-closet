@@ -1,0 +1,29 @@
+{
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "知衣",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/garment/detail",
+			"style": {
+				"navigationBarTitleText": "衣物详情"
+			}
+		},
+		{
+			"path": "pages/today/today",
+			"style": {
+				"navigationBarTitleText": "今日推荐"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "知衣",
+		"navigationBarBackgroundColor": "#f6f5f2",
+		"backgroundColor": "#f6f5f2"
+	}
+}
