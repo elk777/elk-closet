@@ -1,0 +1,118 @@
+// 知衣 · 数据库 schema
+//
+// 设计对齐 packages/shared 的领域类型（单一事实来源）与 PRD 5 数据模型。
+// 两条关键原则：
+//   1. 软删除：衣物用 deletedAt 标记删除，不物理删——保留穿搭记录对单品的历史引用（PRD 5.6.2）
+//   2. 核心字段结构化落列 + AI 额外发现落 JSONB（styleTags / extra），呼应选 PostgreSQL 的理由
+//
+// generator 用 Prisma 7 新版 prisma-client + moduleFormat=cjs，生成到 generated/prisma。
+// 业务代码从该目录导入 PrismaClient / 模型类型，而非 @prisma/client。
+
+generator client {
+  // Prisma 7 主推的新版 generator，生成到项目内指定目录。
+  // moduleFormat = "cjs"：后端是 NestJS + CommonJS，强制 CJS 产物避免 ESM import 摩擦。
+  // 经典 prisma-client-js 在 Prisma 7 + pnpm 下生成不完整，故弃用。
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7：连接串不再写在 schema 里。
+  // 迁移走 prisma.config.ts 的 datasource.url；运行时由 PrismaService 传 driver adapter。
+}
+
+/// 用户账号：多端统一身份（PRD 4.9 / 5）。
+/// unionid 是跨端唯一身份，关联同一人的小程序 + App，一开始就设计对，后期难改。
+model User {
+  id        String   @id @default(cuid())
+  /// 跨端唯一身份（微信 unionid），关联小程序 + App；按需授权前可空
+  unionid   String?  @unique
+  /// 小程序端 openid
+  wxMiniOpenid String? @unique @map("wx_mini_openid")
+  /// App 端 openid
+  wxAppOpenid  String? @unique @map("wx_app_openid")
+  /// 昵称：用户主动授权后才有
+  nickname  String?
+  /// 头像 URL：用户主动授权后才有
+  avatarUrl String?  @map("avatar_url")
+  /// 衣柜名称，默认「我的衣橱」
+  closetName String  @default("我的衣橱") @map("closet_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  /// 最后活跃时间，用于留存分析
+  lastActiveAt DateTime @default(now()) @map("last_active_at")
+
+  garments  Garment[]
+
+  @@map("users")
+}
+
+/// 衣物：录入生命线的核心实体（PRD 4.1 / 5.5.2）。
+/// 结构化字段供筛选/推荐/洞察；styleTags / extra 落 JSONB 存 AI 额外发现。
+model Garment {
+  id       String @id @default(cuid())
+  ownerId  String @map("owner_id")
+  owner    User   @relation(fields: [ownerId], references: [id])
+
+  // ── 核心属性（AI 识别 + 用户可改）──
+  /// 名称，如「米白针织衫」
+  name      String
+  /// 品类：对齐 shared CATEGORIES 白名单（上衣/裤子/.../其他）
+  category  String
+  /// 大类：服装 | 配饰
+  majorType String @map("major_type")
+  /// 主色调中文名，如「米白」
+  mainColor String @map("main_color")
+  /// 近似色值 #RRGGBB，供色彩墙排序
+  colorHex  String @map("color_hex")
+  /// 材质，自由文本，如「羊毛混纺」；允许先囫囵存后补
+  material  String @default("")
+  /// 厚薄：薄 | 中 | 厚
+  thickness String
+  /// 适用季节数组：春/夏/秋/冬（JSONB）
+  seasons   Json
+  /// 正式度：休闲 | 日常 | 正式
+  formality String
+
+  // ── AI 额外发现（JSONB，不频繁改表）──
+  /// AI 打的自由风格标签，如 ['极简','通勤']
+  styleTags Json @default("[]") @map("style_tags")
+  /// AI 的额外发现，原样保留
+  extra     Json @default("{}")
+
+  // ── 图片（对象存储 URL）──
+  /// 原图 URL
+  originalImageUrl String  @map("original_image_url")
+  /// 抠图去背景后的图 URL；抠图失败时为 null，回退用原图（PRD 5.6.1）
+  cutoutImageUrl   String? @map("cutout_image_url")
+
+  // ── 商业化钩子（PRD 2.2，产品暂不暴露，仅埋点）──
+  brand           String?
+  price           Int?
+  /// 购入时间
+  purchasedAt     DateTime? @map("purchased_at")
+  /// 购买渠道，如「天猫」
+  purchaseChannel String?   @map("purchase_channel")
+  /// 商品链接
+  purchaseUrl     String?   @map("purchase_url")
+
+  // ── 穿着统计（打卡自动更新，PRD 4.7 数据飞轮）──
+  /// 累计穿着次数
+  wearCount  Int       @default(0) @map("wear_count")
+  /// 上次穿着日期，未穿过为 null
+  lastWornAt DateTime? @map("last_worn_at")
+
+  /// 是否闲置（用户手动标记，进断舍离清单）
+  archived  Boolean  @default(false)
+  /// 软删除标记：非 null 即已删除，保留历史引用（PRD 5.6.2）
+  deletedAt DateTime? @map("deleted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // 常用查询：按 owner 列衣橱、按 owner+品类筛选、排除已删除
+  @@index([ownerId, deletedAt])
+  @@index([ownerId, category])
+  @@map("garments")
+}
