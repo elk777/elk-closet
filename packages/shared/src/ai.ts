@@ -15,6 +15,7 @@ import {
   SEASONS,
   FORMALITY,
 } from './enums';
+import type { Garment } from './garment';
 
 /* ============================================================
    能力一：衣物识别
@@ -90,7 +91,8 @@ export type WardrobeBriefItem = z.infer<typeof WardrobeBriefItemSchema>;
 
 /** 推荐输入契约（后端组装） */
 export const RecommendInputSchema = z.object({
-  weather: RecommendWeatherSchema,
+  /** 当前天气；未配置天气服务或取值失败时缺省，prompt 内按季节降级 */
+  weather: RecommendWeatherSchema.optional(),
   /** 场合，可选 */
   occasion: z.string().optional(),
   /** 衣橱摘要 */
@@ -141,4 +143,53 @@ export function pruneRecommend(
     }))
     .filter((o) => o.itemIds.length > 0);
   return { outfits };
+}
+
+/* ============================================================
+   今日推荐：后端 → 前端的富返回契约
+   ============================================================ */
+
+/**
+ * 解锁今日推荐所需的最少衣物件数（PRD 4.9「添加 3-5 件解锁」，取下限）。
+ * 前后端共用：后端据此判断是否够料出推荐，前端据此展示解锁引导进度。
+ */
+export const RECOMMEND_UNLOCK_THRESHOLD = 3;
+
+/**
+ * 一套今日推荐（前端直接渲染用）。
+ *
+ * 在 RecommendedOutfit 的基础上，把 itemIds 展开为完整 Garment——
+ * 前端要图、要名称，无需再逐个回查，后端组装时一次性填好。
+ */
+export interface RecommendedOutfitView {
+  /** 组成单品（已展开为完整衣物，含图与属性） */
+  items: Garment[];
+  /** 适用场合，如「通勤」；AI 可能留空 */
+  occasion: string;
+  /** 风格标签，如「极简」；AI 可能留空 */
+  styleTag: string;
+  /** 匹配度 0~100，供前端展示 */
+  matchScore: number;
+  /** 推荐理由，给用户看的一段话 */
+  reason: string;
+}
+
+/**
+ * 今日推荐接口返回。
+ *
+ * 三种状态一个结构表达，前端据 status 分支渲染：
+ * - locked：衣橱件数不足，引导继续添加（附当前/所需件数）
+ * - ok：正常出推荐（weather 可能为 null——天气未配置/取失败时降级，不阻塞推荐）
+ * - empty：件数够但 AI 没能产出可用套装（极端兜底，前端提示稍后再试）
+ */
+export interface TodayRecommendation {
+  status: 'locked' | 'ok' | 'empty';
+  /** 当前衣橱有效件数（排除闲置/软删除） */
+  garmentCount: number;
+  /** 解锁所需件数（= RECOMMEND_UNLOCK_THRESHOLD），locked 时前端算进度用 */
+  unlockThreshold: number;
+  /** 当前天气；未配置天气服务或取值失败时为 null（推荐已按季节降级） */
+  weather: RecommendWeather | null;
+  /** 推荐套装列表；locked / empty 时为空数组 */
+  outfits: RecommendedOutfitView[];
 }
