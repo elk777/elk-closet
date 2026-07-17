@@ -82,7 +82,8 @@ export class WeatherService {
   ): Promise<RecommendWeather> {
     // 和风 location 参数为「经度,纬度」，最多两位小数
     const location = `${lon.toFixed(2)},${lat.toFixed(2)}`;
-    const host = this.config.apiHost.replace(/\/$/, '');
+    // 归一化 host：容忍填写时漏写协议（补 https://）与末尾斜杠
+    const host = this.normalizeHost(this.config.apiHost);
     const url = `${host}/v7/weather/now?location=${location}`;
 
     const res = await fetch(url, {
@@ -107,5 +108,16 @@ export class WeatherService {
       rain: Number(now.precip) > 0 ? 1 : 0,
       desc: now.text,
     };
+  }
+
+  /**
+   * 归一化 apiHost：容忍配置里漏写协议或多写末尾斜杠。
+   * 和风账号专属域名默认走 HTTPS，未写协议时补 https://。
+   * @param raw 原始配置值
+   * @returns 形如 https://xxx.qweatherapi.com 的规范前缀
+   */
+  private normalizeHost(raw: string): string {
+    const trimmed = raw.trim().replace(/\/+$/, '');
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   }
 }
