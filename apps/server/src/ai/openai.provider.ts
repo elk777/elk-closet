@@ -9,7 +9,11 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import type { RecognitionResult } from '@zhiyi/shared';
+import type {
+  RecognitionResult,
+  RecommendInput,
+  RecommendOutput,
+} from '@zhiyi/shared';
 import type { AiConfig } from '../config/configuration';
 import type { AiProvider, RecognizeInput } from './ai-provider.interface';
 import {
@@ -17,6 +21,11 @@ import {
   RECOGNITION_SYSTEM_PROMPT,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
+import {
+  buildRecommendUserPrompt,
+  parseRecommend,
+  RECOMMEND_SYSTEM_PROMPT,
+} from './recommend.prompt';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
@@ -36,6 +45,25 @@ export class OpenAiProvider implements AiProvider {
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
     const raw = await this.callModel(input.imageUrl);
     return parseRecognition(raw);
+  }
+
+  async recommend(input: RecommendInput): Promise<RecommendOutput> {
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      max_tokens: 1500,
+      // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: RECOMMEND_SYSTEM_PROMPT },
+        { role: 'user', content: buildRecommendUserPrompt(input) },
+      ],
+    });
+
+    const text = completion.choices[0]?.message?.content;
+    if (!text) {
+      throw new Error('OpenAI 返回中没有文本内容');
+    }
+    return parseRecommend(text);
   }
 
   /**

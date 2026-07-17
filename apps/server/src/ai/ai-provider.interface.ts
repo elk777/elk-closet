@@ -6,7 +6,11 @@
  * 换模型 / 换协议只改 AI_PROVIDER 配置与对应实现，上层与数据库不动。
  */
 
-import type { RecognitionResult } from '@zhiyi/shared';
+import type {
+  RecognitionResult,
+  RecommendInput,
+  RecommendOutput,
+} from '@zhiyi/shared';
 
 /** 注入 AiProvider 实现的 DI token */
 export const AI_PROVIDER = Symbol('AI_PROVIDER');
@@ -20,7 +24,7 @@ export interface RecognizeInput {
 /**
  * AI 能力接口。
  *
- * 当前只有识别（录入生命线所需）；recommend / tryOn 后续模块再加，
+ * 识别（录入生命线）+ 推荐（今日推荐，PRD 4.5）；tryOn 后续模块再加，
  * 届时各 Provider 实现补齐即可，接口保持稳定。
  */
 export interface AiProvider {
@@ -36,4 +40,18 @@ export interface AiProvider {
    * @returns 已过 Zod 校验的结构化识别结果
    */
   recognize(input: RecognizeInput): Promise<RecognitionResult>;
+
+  /**
+   * 生成搭配推荐（PRD 4.5「私人造型师」）。
+   *
+   * 实现约定：
+   * - 输入为已组装的衣橱摘要 + 天气 + 场合，纯文本对话（无需 vision）
+   * - 强制模型按 RecommendOutputSchema 返回 JSON
+   * - 返回前过 Zod 校验；itemIds 是否真实存在由上层 pruneRecommend 二次把关
+   * - 解析失败重试 1 次后仍失败则抛错
+   *
+   * @param input 推荐输入契约（衣橱摘要 / 天气 / 偏好）
+   * @returns 已过 Zod 校验的推荐结果
+   */
+  recommend(input: RecommendInput): Promise<RecommendOutput>;
 }

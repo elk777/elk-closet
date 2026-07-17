@@ -9,7 +9,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { RecognitionResult } from '@zhiyi/shared';
+import type {
+  RecognitionResult,
+  RecommendInput,
+  RecommendOutput,
+} from '@zhiyi/shared';
 import type { AiConfig } from '../config/configuration';
 import type { AiProvider, RecognizeInput } from './ai-provider.interface';
 import {
@@ -17,6 +21,11 @@ import {
   RECOGNITION_SYSTEM_PROMPT,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
+import {
+  buildRecommendUserPrompt,
+  parseRecommend,
+  RECOMMEND_SYSTEM_PROMPT,
+} from './recommend.prompt';
 
 @Injectable()
 export class AnthropicProvider implements AiProvider {
@@ -37,6 +46,23 @@ export class AnthropicProvider implements AiProvider {
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
     const raw = await this.callModel(input.imageUrl);
     return parseRecognition(raw);
+  }
+
+  async recommend(input: RecommendInput): Promise<RecommendOutput> {
+    const message = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 1500,
+      system: RECOMMEND_SYSTEM_PROMPT,
+      messages: [
+        { role: 'user', content: buildRecommendUserPrompt(input) },
+      ],
+    });
+
+    const textBlock = message.content.find((b) => b.type === 'text');
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new Error('Anthropic 返回中没有文本块');
+    }
+    return parseRecommend(textBlock.text);
   }
 
   /**

@@ -9,7 +9,11 @@
  */
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { RecognitionResult } from '@zhiyi/shared';
+import type {
+  RecognitionResult,
+  RecommendInput,
+  RecommendOutput,
+} from '@zhiyi/shared';
 import {
   AI_PROVIDER,
   type AiProvider,
@@ -21,6 +25,15 @@ export class RecognitionFailedError extends Error {
   constructor(cause: unknown) {
     super('AI 识别失败');
     this.name = 'RecognitionFailedError';
+    this.cause = cause;
+  }
+}
+
+/** 推荐整体失败（含重试）后抛出，供上层降级为空推荐（前端提示稍后再试） */
+export class RecommendFailedError extends Error {
+  constructor(cause: unknown) {
+    super('AI 推荐失败');
+    this.name = 'RecommendFailedError';
     this.cause = cause;
   }
 }
@@ -49,6 +62,26 @@ export class AiService {
       } catch (second) {
         this.logger.error(`识别重试仍失败：${String(second)}`);
         throw new RecognitionFailedError(second);
+      }
+    }
+  }
+
+  /**
+   * 生成搭配推荐，失败自动重试 1 次。
+   * @param input 推荐输入（天气 + 衣橱摘要 + 场合）
+   * @returns 已过 Zod 校验的推荐结果（itemIds 真实性由上层 pruneRecommend 把关）
+   * @throws RecommendFailedError 重试后仍失败
+   */
+  async recommend(input: RecommendInput): Promise<RecommendOutput> {
+    try {
+      return await this.provider.recommend(input);
+    } catch (first) {
+      this.logger.warn(`推荐失败，重试一次：${String(first)}`);
+      try {
+        return await this.provider.recommend(input);
+      } catch (second) {
+        this.logger.error(`推荐重试仍失败：${String(second)}`);
+        throw new RecommendFailedError(second);
       }
     }
   }
