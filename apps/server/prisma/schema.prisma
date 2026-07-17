@@ -44,6 +44,7 @@ model User {
   lastActiveAt DateTime @default(now()) @map("last_active_at")
 
   garments  Garment[]
+  outfits   Outfit[]
 
   @@map("users")
 }
@@ -111,8 +112,60 @@ model Garment {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // 穿搭记录里对本衣物的引用（多对多，经 OutfitItem 关联）
+  outfitItems OutfitItem[]
+
   // 常用查询：按 owner 列衣橱、按 owner+品类筛选、排除已删除
   @@index([ownerId, deletedAt])
   @@index([ownerId, category])
   @@map("garments")
+}
+
+/// 穿搭记录：一次打卡（PRD 4.7 数据飞轮 + 情感回看）。
+/// 「只给自己看的私密视觉日记」——存一张美照 + 当天用了哪几件衣物 + 场合/天气快照。
+/// 打卡时同步给关联衣物的 wearCount +1、lastWornAt 置为 wornOn（在同一事务里，保证数据飞轮一致）。
+model Outfit {
+  id      String @id @default(cuid())
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  /// 打卡美照 URL（对象存储，资源类型 outfits）
+  photoUrl String @map("photo_url")
+  /// 穿着日期（按天，用于月历聚合）；与 createdAt 区分——允许补记过去某天
+  wornOn   DateTime @map("worn_on") @db.Date
+  /// 场合，如「通勤」「约会」；可空
+  occasion String?
+  /// 记录来源：ai（推荐采纳）| manual（自主搭配）| tryon（试穿转化），用于推荐效果分析
+  source   String @default("manual")
+  /// 打卡时的天气快照（JSONB），回看时还原当天体感；取不到为 null
+  weather  Json?
+  /// 随手备注（如心情/搭配灵感）；可空
+  note     String?
+
+  /// 软删除：与衣物一致，保留历史（PRD 5.6.2）
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  items OutfitItem[]
+
+  // 月历查询：按 owner + 穿着日期范围，排除已删除
+  @@index([ownerId, wornOn])
+  @@map("outfits")
+}
+
+/// 穿搭-衣物关联（多对多连接表）。
+/// 独立成表而非隐式多对多：将来可挂「单品在图中的位置」等元信息，且便于按衣物反查「出现在哪些搭配」。
+model OutfitItem {
+  id        String @id @default(cuid())
+  outfitId  String @map("outfit_id")
+  garmentId String @map("garment_id")
+
+  outfit  Outfit  @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+  garment Garment @relation(fields: [garmentId], references: [id])
+
+  // 同一套里同一件不重复；按衣物反查其所在搭配
+  @@unique([outfitId, garmentId])
+  @@index([garmentId])
+  @@map("outfit_items")
 }

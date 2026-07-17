@@ -10,12 +10,17 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import type {
+  GuessOutfitResult,
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
 } from '@zhiyi/shared';
 import type { AiConfig } from '../config/configuration';
-import type { AiProvider, RecognizeInput } from './ai-provider.interface';
+import type {
+  AiProvider,
+  GuessOutfitInput,
+  RecognizeInput,
+} from './ai-provider.interface';
 import {
   parseRecognition,
   RECOGNITION_SYSTEM_PROMPT,
@@ -26,6 +31,11 @@ import {
   parseRecommend,
   RECOMMEND_SYSTEM_PROMPT,
 } from './recommend.prompt';
+import {
+  GUESS_OUTFIT_SYSTEM_PROMPT,
+  GUESS_OUTFIT_USER_PROMPT,
+  parseGuessOutfit,
+} from './guess-outfit.prompt';
 
 @Injectable()
 export class OpenAiProvider implements AiProvider {
@@ -65,6 +75,38 @@ export class OpenAiProvider implements AiProvider {
       throw new Error('OpenAI 返回中没有文本内容');
     }
     return parseRecommend(text);
+  }
+
+  async guessOutfitItems(
+    input: GuessOutfitInput,
+  ): Promise<GuessOutfitResult> {
+    // 多图内容块：打卡照在前，其后每个候选「先文本标注 id/简述，再贴图」，
+    // 让模型能把视觉命中对应回具体 id。
+    const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
+      { type: 'text', text: GUESS_OUTFIT_USER_PROMPT },
+      { type: 'text', text: '【今日穿搭照】' },
+      { type: 'image_url', image_url: { url: input.photoUrl } },
+    ];
+    for (const c of input.candidates) {
+      content.push({ type: 'text', text: `候选 id=${c.id}：${c.brief}` });
+      content.push({ type: 'image_url', image_url: { url: c.imageUrl } });
+    }
+
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: GUESS_OUTFIT_SYSTEM_PROMPT },
+        { role: 'user', content },
+      ],
+    });
+
+    const text = completion.choices[0]?.message?.content;
+    if (!text) {
+      throw new Error('OpenAI 返回中没有文本内容');
+    }
+    return parseGuessOutfit(text);
   }
 
   /**

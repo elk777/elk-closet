@@ -10,6 +10,7 @@
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type {
+  GuessOutfitResult,
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
@@ -17,6 +18,7 @@ import type {
 import {
   AI_PROVIDER,
   type AiProvider,
+  type GuessOutfitInput,
   type RecognizeInput,
 } from './ai-provider.interface';
 
@@ -82,6 +84,34 @@ export class AiService {
       } catch (second) {
         this.logger.error(`推荐重试仍失败：${String(second)}`);
         throw new RecommendFailedError(second);
+      }
+    }
+  }
+
+  /**
+   * 预猜打卡照里穿了衣橱哪几件（PRD 4.7 系统预猜）。
+   *
+   * 与识别/推荐不同：这里是「尽力而为」的辅助能力，失败不抛错——
+   * 重试 1 次后仍失败则返回空命中，前端降级为「无预选，用户手动选」，
+   * 绝不阻塞打卡（打卡摩擦要压到最低，数据飞轮的燃料不能断）。
+   * @param input 打卡照 + 候选衣橱清单
+   * @returns 命中的衣物 id（真实性由上层 pruneGuess 把关）；失败时为空
+   */
+  async guessOutfitItems(
+    input: GuessOutfitInput,
+  ): Promise<GuessOutfitResult> {
+    // 候选为空直接短路，不必调模型
+    if (input.candidates.length === 0) return { itemIds: [] };
+    try {
+      return await this.provider.guessOutfitItems(input);
+    } catch (first) {
+      this.logger.warn(`预猜失败，重试一次：${String(first)}`);
+      try {
+        return await this.provider.guessOutfitItems(input);
+      } catch (second) {
+        // 尽力而为：仍失败则空命中降级，不抛错阻塞打卡
+        this.logger.warn(`预猜重试仍失败，降级为手动选：${String(second)}`);
+        return { itemIds: [] };
       }
     }
   }

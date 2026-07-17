@@ -7,6 +7,7 @@
  */
 
 import type {
+  GuessOutfitResult,
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
@@ -19,6 +20,24 @@ export const AI_PROVIDER = Symbol('AI_PROVIDER');
 export interface RecognizeInput {
   /** 衣物图可公开访问的 URL（对象存储 / CDN） */
   imageUrl: string;
+}
+
+/** 预猜候选：衣橱里一件衣物的最小标识（id + 图 + 简述），供多图视觉比对 */
+export interface GuessCandidate {
+  /** 衣物 id，模型据此回填命中结果 */
+  id: string;
+  /** 衣物图 URL（抠图优先，回退原图） */
+  imageUrl: string;
+  /** 一句话简述（品类+主色），辅助模型在图不清时判断 */
+  brief: string;
+}
+
+/** 预猜入参：一张打卡照 + 衣橱候选清单 */
+export interface GuessOutfitInput {
+  /** 打卡美照 URL */
+  photoUrl: string;
+  /** 候选衣物清单（通常为该用户在库未闲置衣物） */
+  candidates: GuessCandidate[];
 }
 
 /**
@@ -54,4 +73,18 @@ export interface AiProvider {
    * @returns 已过 Zod 校验的推荐结果
    */
   recommend(input: RecommendInput): Promise<RecommendOutput>;
+
+  /**
+   * 预猜打卡照里穿了衣橱哪几件（PRD 4.7 系统预猜）。
+   *
+   * 实现约定：
+   * - 打卡照 + 候选单品图一起走多图 vision，让模型指出命中的 id
+   * - 强制按 GuessOutfitResultSchema 返回 JSON，返回前过 Zod 校验
+   * - itemIds 真实性由上层 pruneGuess 二次把关
+   * - 尽力而为：解析失败重试 1 次后仍失败则抛错，上层降级为「空预选，用户手动选」
+   *
+   * @param input 打卡照 + 候选衣橱清单
+   * @returns 已过 Zod 校验的预猜结果（命中的衣物 id）
+   */
+  guessOutfitItems(input: GuessOutfitInput): Promise<GuessOutfitResult>;
 }

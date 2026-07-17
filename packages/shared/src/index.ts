@@ -8,4 +8,5 @@ export * from './enums';
 export * from './user';
 export * from './garment';
 export * from './ai';
+export * from './outfit';
 export * from './api';
