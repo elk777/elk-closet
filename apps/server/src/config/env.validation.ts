@@ -59,6 +59,14 @@ export const envSchema = z.object({
   UPYUN_DOMAIN: z.string().url({ message: 'UPYUN_DOMAIN 必须是合法 URL' }),
   UPYUN_UPLOAD_DIR: z.string().min(1).default('garments'),
   UPYUN_SIGN_EXPIRE: z.coerce.number().int().min(60).default(600),
+
+  // ── 和风天气（今日推荐的天气输入）──
+  // 全部可选：未配置时今日推荐按季节降级，不阻塞链路，故不强制非空。
+  QWEATHER_API_HOST: z.string().optional().default(''),
+  QWEATHER_API_KEY: z.string().optional().default(''),
+  // 定位失败 / 未授权时的兜底城市经纬度，默认杭州
+  QWEATHER_DEFAULT_LON: z.coerce.number().default(120.15),
+  QWEATHER_DEFAULT_LAT: z.coerce.number().default(30.28),
 });
 
 /** 校验后的环境变量类型（全部字段已带默认值 / 转换） */

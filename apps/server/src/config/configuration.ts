@@ -62,6 +62,20 @@ export interface UpyunConfig {
   signExpire: number;
 }
 
+/**
+ * 和风天气配置（今日推荐的天气输入，PRD 4.5）。
+ *
+ * apiHost 为账号专属域名（和风控制台「设置」页可见），非旧的公共 devapi 域名；
+ * defaultLon/defaultLat 为定位失败时的兜底城市经纬度（小程序定位需资质，
+ * 开发期或用户拒授权时回退到此，保证推荐链路不中断）。
+ */
+export interface WeatherConfig {
+  apiHost: string;
+  apiKey: string;
+  defaultLon: number;
+  defaultLat: number;
+}
+
 export const appConfig = registerAs('app', (): AppConfig => {
   const env = (process.env.NODE_ENV ?? 'development') as AppConfig['env'];
   return {
@@ -127,6 +141,17 @@ export const upyunConfig = registerAs(
   }),
 );
 
+export const weatherConfig = registerAs(
+  'weather',
+  (): WeatherConfig => ({
+    apiHost: process.env.QWEATHER_API_HOST ?? '',
+    apiKey: process.env.QWEATHER_API_KEY ?? '',
+    // 兜底城市默认杭州（经纬度），定位失败时用它取天气
+    defaultLon: Number(process.env.QWEATHER_DEFAULT_LON ?? 120.15),
+    defaultLat: Number(process.env.QWEATHER_DEFAULT_LAT ?? 30.28),
+  }),
+);
+
 /** 汇总所有 config 工厂，供 ConfigModule.forRoot 的 load 使用 */
 export const configFactories = [
   appConfig,
@@ -135,4 +160,5 @@ export const configFactories = [
   jwtConfig,
   aiConfig,
   upyunConfig,
+  weatherConfig,
 ];
