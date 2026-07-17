@@ -51,7 +51,9 @@ export class AnthropicProvider implements AiProvider {
   async recommend(input: RecommendInput): Promise<RecommendOutput> {
     const message = await this.client.messages.create({
       model: this.model,
-      max_tokens: 1500,
+      // 推荐 JSON 比识别长，且推理型模型（如 mimo）会先输出思考再出正文，
+      // 思考与正文共用 token 预算，留足 4000 避免 JSON 被截断（Unterminated string）
+      max_tokens: 4000,
       system: RECOMMEND_SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: buildRecommendUserPrompt(input) },

@@ -50,7 +50,8 @@ export class OpenAiProvider implements AiProvider {
   async recommend(input: RecommendInput): Promise<RecommendOutput> {
     const completion = await this.client.chat.completions.create({
       model: this.model,
-      max_tokens: 1500,
+      // 推理模型的思考过程与正文共用预算，给足以免 JSON 被截断（Unterminated）
+      max_tokens: 4000,
       // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
       response_format: { type: 'json_object' },
       messages: [
