@@ -57,18 +57,21 @@ export class RecommendService {
     })) as unknown as Garment[];
 
     const garmentCount = garments.length;
+
+    // 天气与推荐解耦：天气是独立的增强信息，无论是否解锁都先取，
+    // 让用户一进页面（哪怕衣橱还没满）就能看到今日实况。取不到返回 null。
+    const weather = await this.weather.getCurrent(dto.lon, dto.lat);
+
     const base = {
       garmentCount,
       unlockThreshold: RECOMMEND_UNLOCK_THRESHOLD,
+      weather,
     };
 
-    // 件数不足：不调 AI，直接引导继续添加
+    // 件数不足：不调 AI，直接引导继续添加（但天气照常返回）
     if (garmentCount < RECOMMEND_UNLOCK_THRESHOLD) {
-      return { ...base, status: 'locked', weather: null, outfits: [] };
+      return { ...base, status: 'locked', outfits: [] };
     }
-
-    // 天气：取不到返回 null，推荐按季节降级
-    const weather = await this.weather.getCurrent(dto.lon, dto.lat);
 
     // 组装 AI 输入：衣橱只传摘要（不含图，控 token）
     const wardrobe: WardrobeBriefItem[] = garments.map((g) => ({

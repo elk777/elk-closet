@@ -48,9 +48,55 @@ export class AnthropicProvider implements AiProvider {
     this.model = ai.anthropic.model;
     this.client = new Anthropic({
       apiKey: ai.anthropic.apiKey,
+      // 显式置空 authToken：SDK 默认会读环境变量 ANTHROPIC_AUTH_TOKEN，
+      // 自动附加 `Authorization: Bearer` 头。开发机若装了 Claude Code
+      // 等工具会注入该变量，导致本请求同时带上「我们的 x-api-key」与
+      // 「别处的 Bearer token」，网关优先认后者 → 401 → 推荐静默降级为 empty。
+      // 只走 x-api-key 单一鉴权，杜绝环境变量串味。
+      authToken: null,
       baseURL: ai.anthropic.baseUrl,
       timeout: ai.timeoutMs,
     });
+  }
+
+  /**
+   * 从 messages.create 的返回里稳健地取出第一个文本块内容。
+   *
+   * 为什么不直接 `message.content.find(...)`：部分兼容网关（如本项目用的
+   * mimo 网关）响应 Content-Type 不是 application/json，@anthropic-ai/sdk
+   * 遇到这种情况不会反序列化，而是把整个响应体作为「字符串」原样返回。
+   * 此时 message 是 string、message.content 为 undefined，直接 .find 会抛
+   * `Cannot read properties of undefined`，整条推荐/识别链静默降级。
+   * 这里兼容两种形态：标准对象走 content 数组；字符串则先 JSON.parse 再取。
+   *
+   * @param message messages.create 的返回（可能是 Message 对象或 JSON 字符串）
+   * @returns 第一个文本块的 text
+   * @throws Error 无法解析出文本块时
+   */
+  private extractText(message: unknown): string {
+    let msg = message;
+    // 网关把响应当纯文本返回时，SDK 交回一个字符串——先自行反序列化。
+    if (typeof msg === 'string') {
+      const raw = msg;
+      try {
+        msg = JSON.parse(raw) as unknown;
+      } catch {
+        throw new Error(`Anthropic 返回无法解析为 JSON：${raw.slice(0, 200)}`);
+      }
+    }
+    const content = (msg as { content?: unknown })?.content;
+    if (!Array.isArray(content)) {
+      throw new Error('Anthropic 返回中没有 content 数组');
+    }
+    const textBlock = content.find(
+      (b): b is { type: 'text'; text: string } =>
+        !!b && (b as { type?: string }).type === 'text' &&
+        typeof (b as { text?: unknown }).text === 'string',
+    );
+    if (!textBlock) {
+      throw new Error('Anthropic 返回中没有文本块');
+    }
+    return textBlock.text;
   }
 
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
@@ -61,20 +107,19 @@ export class AnthropicProvider implements AiProvider {
   async recommend(input: RecommendInput): Promise<RecommendOutput> {
     const message = await this.client.messages.create({
       model: this.model,
-      // 推荐 JSON 比识别长，且推理型模型（如 mimo）会先输出思考再出正文，
-      // 思考与正文共用 token 预算，留足 4000 避免 JSON 被截断（Unterminated string）
-      max_tokens: 4000,
+      // 推荐是结构化 JSON 任务，无需模型长篇推理。关掉 thinking：
+      // 推理型模型（如 mimo）默认会先输出大段思考再出正文，实测单次耗时
+      // 从 ~26s 降到 ~3.5s，是今日推荐超时的主因。关思考后正文很短，
+      // max_tokens 1024 已足够（思考不再占预算，无截断风险）。
+      max_tokens: 1024,
+      thinking: { type: 'disabled' },
       system: RECOMMEND_SYSTEM_PROMPT,
       messages: [
         { role: 'user', content: buildRecommendUserPrompt(input) },
       ],
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('Anthropic 返回中没有文本块');
-    }
-    return parseRecommend(textBlock.text);
+    return parseRecommend(this.extractText(message));
   }
 
   async guessOutfitItems(
@@ -99,11 +144,7 @@ export class AnthropicProvider implements AiProvider {
       messages: [{ role: 'user', content }],
     });
 
-    const textBlock = message.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('Anthropic 返回中没有文本块');
-    }
-    return parseGuessOutfit(textBlock.text);
+    return parseGuessOutfit(this.extractText(message));
   }
 
   /**
@@ -128,10 +169,6 @@ export class AnthropicProvider implements AiProvider {
     });
 
     // 取第一个文本块作为返回
-    const textBlock = message.content.find((b) => b.type === 'text');
-    if (!textBlock || textBlock.type !== 'text') {
-      throw new Error('Anthropic 返回中没有文本块');
-    }
-    return textBlock.text;
+    return this.extractText(message);
   }
 }
