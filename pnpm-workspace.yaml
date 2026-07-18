@@ -3,10 +3,10 @@ packages:
   - "packages/*"
 
 allowBuilds:
-  '@parcel/watcher': set this to true or false
-  core-js: set this to true or false
-  esbuild: set this to true or false
-  vue-demi: set this to true or false
+  '@parcel/watcher': false
+  core-js: false
+  esbuild: false
+  vue-demi: false
 
 # 允许执行构建脚本的依赖白名单（pnpm 9+ 默认拦截所有 postinstall 脚本以防供应链攻击）
 # @nestjs/core：脚本仅打印赞助提示，安全放行以消除告警
