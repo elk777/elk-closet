@@ -40,3 +40,10 @@ coverage/
 # AI 工具本地私有配置（团队级配置入库，个人本地覆盖不入库）
 .claude/settings.local.json
 .claude/*.local.json
+
+#trellis
+.agents
+.claude
+.codex
+.trellis
+
