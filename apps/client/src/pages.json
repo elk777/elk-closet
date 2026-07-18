@@ -20,6 +20,12 @@
 			}
 		},
 		{
+			"path": "pages/board/board",
+			"style": {
+				"navigationBarTitleText": "衣橱看板"
+			}
+		},
+		{
 			"path": "pages/diary/diary",
 			"style": {
 				"navigationBarTitleText": "穿搭日记"

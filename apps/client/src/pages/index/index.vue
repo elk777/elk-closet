@@ -14,6 +14,9 @@
         <text class="name">{{ closetName }}</text>
       </view>
       <view class="topbar__right">
+        <view class="entry" @click="goBoard">
+          <text class="entry__t">看板</text>
+        </view>
         <view class="entry" @click="goDiary">
           <text class="entry__t">日记</text>
         </view>
@@ -281,6 +284,11 @@ function goToday() {
 /** 进穿搭日记（月历回看） */
 function goDiary() {
   uni.navigateTo({ url: '/pages/diary/diary' });
+}
+
+/** 进衣橱看板（洞察） */
+function goBoard() {
+  uni.navigateTo({ url: '/pages/board/board' });
 }
 </script>
 
