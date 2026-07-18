@@ -32,10 +32,28 @@ interface QWeatherNowResponse {
   };
 }
 
+/** 天气缓存有效期：实时天气变化缓慢，10 分钟内同一地点复用，避免每次进页面都打和风 */
+const WEATHER_TTL_MS = 10 * 60 * 1000;
+
+/** 单次和风请求超时：天气仅为增强项，超过 5s 即放弃降级，不拖垮推荐链路 */
+const WEATHER_TIMEOUT_MS = 5000;
+
+/** 单条缓存：命中的天气 + 写入时刻 */
+interface WeatherCacheEntry {
+  weather: RecommendWeather;
+  at: number;
+}
+
 @Injectable()
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
   private readonly config: WeatherConfig;
+
+  /**
+   * 按地点缓存最近一次天气（内存级）。
+   * key 为归一化坐标（两位小数），同一片区域共享一条，进一步减少调用。
+   */
+  private readonly cache = new Map<string, WeatherCacheEntry>();
 
   constructor(configService: ConfigService) {
     this.config = configService.get<WeatherConfig>('weather')!;
@@ -61,11 +79,21 @@ export class WeatherService {
     const longitude = lon ?? this.config.defaultLon;
     const latitude = lat ?? this.config.defaultLat;
 
+    // 缓存命中且未过期：直接复用，不打和风
+    const key = `${longitude.toFixed(2)},${latitude.toFixed(2)}`;
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.at < WEATHER_TTL_MS) {
+      return cached.weather;
+    }
+
     try {
-      return await this.fetchNow(longitude, latitude);
+      const weather = await this.fetchNow(longitude, latitude);
+      this.cache.set(key, { weather, at: Date.now() });
+      return weather;
     } catch (e) {
       this.logger.warn(`取天气失败，推荐将按季节降级：${String(e)}`);
-      return null;
+      // 取值失败时兜底用过期缓存（有总比没有强），彻底没有才返回 null
+      return cached?.weather ?? null;
     }
   }
 
@@ -86,8 +114,11 @@ export class WeatherService {
     const host = this.normalizeHost(this.config.apiHost);
     const url = `${host}/v7/weather/now?location=${location}`;
 
+    // 天气是推荐的「增强项」，绝不能因和风卡住而拖垮整条推荐链路，
+    // 故 5s 超时即放弃（超时抛错，由 getCurrent 兜底为过期缓存或 null 降级）。
     const res = await fetch(url, {
       headers: { 'X-QW-Api-Key': this.config.apiKey },
+      signal: AbortSignal.timeout(WEATHER_TIMEOUT_MS),
     });
     if (!res.ok) {
       throw new Error(`和风天气 HTTP ${res.status}`);
