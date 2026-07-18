@@ -74,6 +74,11 @@
 
         <!-- 推荐理由 -->
         <text class="outfit__reason">{{ o.reason }}</text>
+
+        <!-- 采纳这套去打卡：带入单品与来源 ai -->
+        <view class="adopt" @click="goCheckIn(o.items)">
+          <text>采纳这套去打卡</text>
+        </view>
       </view>
 
       <!-- 换一套 -->
@@ -154,6 +159,18 @@ function goAddGarment() {
 /** 跳衣物详情 */
 function goDetail(id: string) {
   uni.navigateTo({ url: `/pages/garment/detail?id=${id}` });
+}
+
+/**
+ * 采纳这套去打卡：带入该套单品 id 与来源 ai，跳打卡页。
+ * 用户在打卡页仍可增减单品、补场合备注。
+ * @param items 该套搭配的完整单品（取 id 传入）
+ */
+function goCheckIn(items: { id: string }[]) {
+  const itemIds = items.map((i) => i.id).join(',');
+  uni.navigateTo({
+    url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
+  });
 }
 </script>
 
@@ -302,6 +319,16 @@ function goDetail(id: string) {
   font-size: 13px;
   color: $zy-ink-2;
   line-height: 1.6;
+}
+.adopt {
+  margin-top: 14px;
+  text-align: center;
+  padding: 12px;
+  border-radius: $zy-radius-sm;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
 }
 .refresh {
   margin-top: 4px;

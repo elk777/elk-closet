@@ -14,6 +14,9 @@
         <text class="name">{{ closetName }}</text>
       </view>
       <view class="topbar__right">
+        <view class="entry" @click="goDiary">
+          <text class="entry__t">日记</text>
+        </view>
         <view class="today-entry" @click="goToday">
           <text class="today-entry__t">今日推荐</text>
         </view>
@@ -180,6 +183,11 @@ function goDetail(id: string) {
 function goToday() {
   uni.navigateTo({ url: '/pages/today/today' });
 }
+
+/** 进穿搭日记（月历回看） */
+function goDiary() {
+  uni.navigateTo({ url: '/pages/diary/diary' });
+}
 </script>
 
 <style lang="scss">
@@ -229,6 +237,17 @@ function goToday() {
   font-size: 12px;
   font-weight: 600;
   color: #fff;
+}
+.entry {
+  padding: 6px 14px;
+  border-radius: $zy-radius-pill;
+  background: $zy-surface;
+  border: 1px solid $zy-line;
+}
+.entry__t {
+  font-size: 12px;
+  font-weight: 600;
+  color: $zy-ink-2;
 }
 .count {
   font-size: 13px;

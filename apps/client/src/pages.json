@@ -18,6 +18,24 @@
 			"style": {
 				"navigationBarTitleText": "今日推荐"
 			}
+		},
+		{
+			"path": "pages/diary/diary",
+			"style": {
+				"navigationBarTitleText": "穿搭日记"
+			}
+		},
+		{
+			"path": "pages/diary/check-in",
+			"style": {
+				"navigationBarTitleText": "记录穿搭"
+			}
+		},
+		{
+			"path": "pages/diary/detail",
+			"style": {
+				"navigationBarTitleText": "穿搭详情"
+			}
 		}
 	],
 	"globalStyle": {
