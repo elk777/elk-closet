@@ -20,6 +20,8 @@ export interface RequestOptions {
   header?: Record<string, string>;
   /** 是否静默（不自动弹错误提示），默认 false */
   silent?: boolean;
+  /** 单次超时（毫秒），缺省用全局 REQUEST_TIMEOUT。AI 生成类接口可放宽 */
+  timeout?: number;
 }
 
 interface FullOptions extends RequestOptions {
@@ -35,7 +37,7 @@ interface FullOptions extends RequestOptions {
  * @returns 解包后的业务数据
  */
 function request<T>(opts: FullOptions): Promise<T> {
-  const { method, url, data, header = {}, silent = false } = opts;
+  const { method, url, data, header = {}, silent = false, timeout } = opts;
   const token = getToken();
   return new Promise<T>((resolve, reject) => {
     uni.request({
@@ -47,11 +49,14 @@ function request<T>(opts: FullOptions): Promise<T> {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...header,
       },
-      timeout: REQUEST_TIMEOUT,
+      timeout: timeout ?? REQUEST_TIMEOUT,
       success: (res) => {
         const body = res.data as ApiResponse<T>;
-        // 业务信封解包：code===0 成功（用 shared 的判定守卫窄化到 ApiSuccess）
-        if (res.statusCode === 200 && body && isApiSuccess(body)) {
+        // 业务信封解包：成功与否以信封 code===0 为准（isApiSuccess 窄化到 ApiSuccess）。
+        // HTTP 状态码只需落在 2xx 成功区间——NestJS 的 POST 默认返回 201，
+        // 若只认 200 会把所有 POST 误判为失败。
+        const httpOk = res.statusCode >= 200 && res.statusCode < 300;
+        if (httpOk && body && isApiSuccess(body)) {
           resolve(body.data);
           return;
         }

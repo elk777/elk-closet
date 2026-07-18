@@ -24,5 +24,8 @@ export function getTodayRecommendation(payload: TodayRecommendPayload = {}) {
   return http.post<TodayRecommendation>(
     '/recommend/today',
     payload as unknown as Record<string, unknown>,
+    // 推荐是 AI 生成语义，比普通接口慢（模型推理 + 可能重试），
+    // 单独放宽到 90s，避免慢一点就被全局 60s 超时误判为「网络异常」
+    { timeout: 90000 },
   );
 }
