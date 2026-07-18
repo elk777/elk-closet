@@ -51,6 +51,13 @@ export const envSchema = z.object({
   AI_OPENAI_API_KEY: z.string().optional().default(''),
   AI_OPENAI_MODEL: z.string().min(1).default('gpt-4o'),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30000),
+  // 是否启用视觉能力（识别 / 打卡预猜靠 image 块）。当前模型（mimo）纯文本，
+  // 传图必 404，故默认关闭：关闭时这两个能力直接走降级，不再空调必失败的接口。
+  // 将来换上支持 vision 的模型再置 true 即可复活，无需改代码。
+  AI_VISION_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // ── 又拍云 ──
   UPYUN_BUCKET: z.string().min(1),

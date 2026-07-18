@@ -9,12 +9,14 @@
  */
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type {
   GuessOutfitResult,
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
 } from '@zhiyi/shared';
+import type { AiConfig } from '../config/configuration';
 import {
   AI_PROVIDER,
   type AiProvider,
@@ -44,9 +46,21 @@ export class RecommendFailedError extends Error {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
 
+  /** 视觉能力开关（识别 / 预猜靠传图）。当前模型不支持传图时置 false，直接降级 */
+  private readonly visionEnabled: boolean;
+
   constructor(
     @Inject(AI_PROVIDER) private readonly provider: AiProvider,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.visionEnabled = configService.get<AiConfig>('ai')!.visionEnabled;
+    if (!this.visionEnabled) {
+      this.logger.warn(
+        'AI 视觉能力已关闭（AI_VISION_ENABLED=false）：识别/打卡预猜将直接降级，' +
+          '不调用传图接口。接入支持 vision 的模型后置 true 即可恢复。',
+      );
+    }
+  }
 
   /**
    * 识别衣物属性，失败自动重试 1 次。
@@ -55,6 +69,10 @@ export class AiService {
    * @throws RecognitionFailedError 重试后仍失败
    */
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
+    // 视觉关闭：不空调必失败的传图接口，直接抛错走「先存图后补」降级
+    if (!this.visionEnabled) {
+      throw new RecognitionFailedError(new Error('AI 视觉能力未启用'));
+    }
     try {
       return await this.provider.recognize(input);
     } catch (first) {
@@ -100,7 +118,8 @@ export class AiService {
   async guessOutfitItems(
     input: GuessOutfitInput,
   ): Promise<GuessOutfitResult> {
-    // 候选为空直接短路，不必调模型
+    // 视觉关闭 或 候选为空：直接短路，不调模型，前端降级为手动选
+    if (!this.visionEnabled) return { itemIds: [] };
     if (input.candidates.length === 0) return { itemIds: [] };
     try {
       return await this.provider.guessOutfitItems(input);

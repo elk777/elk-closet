@@ -50,6 +50,8 @@ export interface AiConfig {
   anthropic: AiEndpointConfig;
   openai: AiEndpointConfig;
   timeoutMs: number;
+  /** 视觉能力开关：false 时识别/预猜直接降级，不调必 404 的传图接口 */
+  visionEnabled: boolean;
 }
 
 /** 又拍云对象存储配置 */
@@ -126,6 +128,8 @@ export const aiConfig = registerAs(
       model: process.env.AI_OPENAI_MODEL ?? 'gpt-4o',
     },
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 30000),
+    // 默认关闭：当前 mimo 模型不支持传图，避免每次识别/打卡都空等一次 404
+    visionEnabled: process.env.AI_VISION_ENABLED === 'true',
   }),
 );
 
