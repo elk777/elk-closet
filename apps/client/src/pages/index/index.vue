@@ -24,6 +24,34 @@
       </view>
     </view>
 
+    <!-- 搜索框：一个框搜所有维度 + 状态词（PRD 4.4）。有衣物时才显示 -->
+    <view v-if="!loading && garments.length > 0" class="searchwrap">
+      <view class="search">
+        <text class="search__ico">🔍</text>
+        <input
+          class="search__input"
+          v-model="keyword"
+          placeholder="搜关键词、颜色、风格、场合…"
+          confirm-type="search"
+          @focus="suggestOpen = true"
+          @blur="onSearchBlur"
+        />
+        <text v-if="keyword" class="search__clr" @click="clearKeyword">×</text>
+      </view>
+
+      <!-- 联想标签：聚焦时出，从衣橱现有数据 + 状态词生成（PRD 4.4 输入即联想） -->
+      <view v-if="suggestOpen && suggestions.length" class="suggest">
+        <view
+          v-for="s in suggestions"
+          :key="s"
+          class="suggest__chip"
+          @click="applySuggestion(s)"
+        >
+          {{ s }}
+        </view>
+      </view>
+    </view>
+
     <!-- 加载中 -->
     <view v-if="loading" class="state">
       <AppLoading text="正在加载衣橱…" />
@@ -37,6 +65,35 @@
         <text>添加第一件衣服</text>
       </view>
     </view>
+
+    <!-- 搜索态：命中结果网格，无结果走空态（PRD 5.6.4） -->
+    <template v-else-if="searching">
+      <view class="search-summary">
+        “<text class="search-summary__kw">{{ keyword.trim() }}</text>” 找到
+        <text class="search-summary__kw">{{ searchResult.length }}</text> 件
+      </view>
+      <view v-if="searchResult.length === 0" class="empty">
+        <text class="empty-t">没找到相关衣物，换个词试试</text>
+        <view class="suggest suggest--inline">
+          <view
+            v-for="s in suggestions"
+            :key="s"
+            class="suggest__chip"
+            @click="applySuggestion(s)"
+          >
+            {{ s }}
+          </view>
+        </view>
+      </view>
+      <view v-else class="grid">
+        <GarmentCard
+          v-for="item in searchResult"
+          :key="item.id"
+          :garment="item"
+          @tap="goDetail(item.id)"
+        />
+      </view>
+    </template>
 
     <!-- 有衣物：分类筛选 + 网格 -->
     <template v-else>
@@ -110,6 +167,8 @@ import {
   CLOTHING_CATEGORIES,
   ACCESSORY_CATEGORIES,
   DEFAULT_CLOSET_NAME,
+  searchGarments,
+  suggestKeywords,
   type Garment,
 } from '@zhiyi/shared';
 import AddGarmentSheet from '../../components/garment/AddGarmentSheet.vue';
@@ -130,6 +189,11 @@ const loading = ref(true);
 const showAdd = ref(false);
 const activeCategory = ref<string>(ALL);
 
+/** 搜索关键词；非空即进入搜索态（覆盖分类筛选） */
+const keyword = ref('');
+/** 联想标签浮层是否展开（聚焦时开，选词/失焦后收） */
+const suggestOpen = ref(false);
+
 const clothingCategories = CLOTHING_CATEGORIES;
 const accessoryCategories = ACCESSORY_CATEGORIES;
 
@@ -139,11 +203,41 @@ const closetName = computed(
   () => userStore.user?.closetName || DEFAULT_CLOSET_NAME,
 );
 
+/** 是否处于搜索态：关键词非空 */
+const searching = computed(() => keyword.value.trim().length > 0);
+
+/** 搜索结果（多维匹配 + 状态词，算法在 shared） */
+const searchResult = computed(() => searchGarments(garments.value, keyword.value));
+
+/** 联想词：从衣橱现有数据 + 状态词生成，随输入过滤 */
+const suggestions = computed(() =>
+  suggestKeywords(garments.value, keyword.value),
+);
+
 /** 按当前选中品类过滤；“全部”时不过滤 */
 const filtered = computed(() => {
   if (activeCategory.value === ALL) return garments.value;
   return garments.value.filter((g) => g.category === activeCategory.value);
 });
+
+/** 点选联想词：落定关键词并收起浮层 */
+function applySuggestion(word: string) {
+  keyword.value = word;
+  suggestOpen.value = false;
+}
+
+/** 清空关键词，回落到分类筛选 */
+function clearKeyword() {
+  keyword.value = '';
+  suggestOpen.value = false;
+}
+
+// 失焦延迟收起浮层，避免点击联想词时浮层先消失导致 click 落空
+function onSearchBlur() {
+  setTimeout(() => {
+    suggestOpen.value = false;
+  }, 150);
+}
 
 /**
  * 加载衣橱列表。
@@ -280,6 +374,60 @@ function goDiary() {
   color: #fff;
   font-size: 15px;
   font-weight: 600;
+}
+.searchwrap {
+  padding: 2px 20px 8px;
+  position: relative;
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: $zy-surface;
+  border: 1px solid $zy-line;
+  border-radius: $zy-radius-sm;
+}
+.search__ico {
+  font-size: 14px;
+  color: $zy-ink-3;
+}
+.search__input {
+  flex: 1;
+  font-size: 14px;
+  color: $zy-ink;
+}
+.search__clr {
+  font-size: 18px;
+  color: $zy-ink-3;
+  padding: 0 4px;
+}
+.suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.suggest--inline {
+  justify-content: center;
+  margin-top: 20px;
+}
+.suggest__chip {
+  padding: 6px 14px;
+  background: $zy-surface;
+  border: 1px solid $zy-line;
+  border-radius: $zy-radius-pill;
+  font-size: 13px;
+  color: $zy-ink-2;
+}
+.search-summary {
+  padding: 0 20px 12px;
+  font-size: 13px;
+  color: $zy-ink-2;
+}
+.search-summary__kw {
+  color: $zy-ink;
+  font-weight: 700;
 }
 .filter {
   white-space: nowrap;
