@@ -2,7 +2,7 @@
  * 今日推荐接口。
  */
 
-import type { TodayRecommendation } from '@zhiyi/shared';
+import type { MatchedOutfits, TodayRecommendation } from '@zhiyi/shared';
 import { http } from './request';
 
 /** 今日推荐入参：经纬度与场合均可选 */
@@ -26,6 +26,30 @@ export function getTodayRecommendation(payload: TodayRecommendPayload = {}) {
     payload as unknown as Record<string, unknown>,
     // 推荐是 AI 生成语义，比普通接口慢（模型推理 + 可能重试），
     // 单独放宽到 90s，避免慢一点就被全局 60s 超时误判为「网络异常」
+    { timeout: 90000 },
+  );
+}
+
+/** 智能搭配入参：场合 / 风格 / 季节，均可选 */
+export interface MatchOutfitPayload {
+  /** 场合，限 OCCASION_OPTIONS；不传按日常 */
+  occasion?: string;
+  /** 风格，限 STYLE_OPTIONS；不传不约束 */
+  style?: string;
+  /** 季节，限 SEASONS；不传后端按当前月份推断 */
+  season?: string;
+}
+
+/**
+ * 获取智能搭配。
+ * @param payload 场合 / 风格 / 季节维度
+ * @returns 四态搭配结果（locked / thin / ok / empty）
+ */
+export function getMatchedOutfits(payload: MatchOutfitPayload = {}) {
+  return http.post<MatchedOutfits>(
+    '/recommend/outfits',
+    payload as unknown as Record<string, unknown>,
+    // 同今日推荐：AI 生成语义，放宽超时
     { timeout: 90000 },
   );
 }

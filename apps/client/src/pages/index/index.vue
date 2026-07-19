@@ -14,6 +14,9 @@
         <text class="name">{{ closetName }}</text>
       </view>
       <view class="topbar__right">
+        <view class="entry" @click="goMatch">
+          <text class="entry__t">搭配</text>
+        </view>
         <view class="entry" @click="goBoard">
           <text class="entry__t">看板</text>
         </view>
@@ -23,7 +26,6 @@
         <view class="today-entry" @click="goToday">
           <text class="today-entry__t">今日推荐</text>
         </view>
-        <text v-if="!loading" class="count">{{ garments.length }} 件</text>
       </view>
     </view>
 
@@ -290,6 +292,11 @@ function goDiary() {
 function goBoard() {
   uni.navigateTo({ url: '/pages/board/board' });
 }
+
+/** 进智能搭配（场合/风格/季节多维切换） */
+function goMatch() {
+  uni.navigateTo({ url: '/pages/match/match' });
+}
 </script>
 
 <style lang="scss">
@@ -349,10 +356,6 @@ function goBoard() {
 .entry__t {
   font-size: 12px;
   font-weight: 600;
-  color: $zy-ink-2;
-}
-.count {
-  font-size: 13px;
   color: $zy-ink-2;
 }
 .state {

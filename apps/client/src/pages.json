@@ -26,6 +26,12 @@
 			}
 		},
 		{
+			"path": "pages/match/match",
+			"style": {
+				"navigationBarTitleText": "智能搭配"
+			}
+		},
+		{
 			"path": "pages/diary/diary",
 			"style": {
 				"navigationBarTitleText": "穿搭日记"
