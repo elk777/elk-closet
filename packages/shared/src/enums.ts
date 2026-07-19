@@ -56,6 +56,39 @@ export const OUTFIT_SOURCES = ['ai', 'manual', 'tryon'] as const;
 export type OutfitSource = (typeof OUTFIT_SOURCES)[number];
 
 /**
+ * 智能搭配的场合维度预设（PRD 4.5）。
+ *
+ * 供智能搭配页作 chip 切换、后端作 prompt 软约束用。区别于识别/衣物的
+ * 结构化枚举：这是「用户想搭给什么场合」的意图选项，不落库、不校验衣物属性，
+ * 因此单独成组而非复用 FORMALITY。
+ */
+export const OCCASION_OPTIONS = [
+  '通勤',
+  '约会',
+  '正式',
+  '休闲',
+  '运动',
+  '旅行',
+] as const;
+export type OccasionOption = (typeof OCCASION_OPTIONS)[number];
+
+/**
+ * 智能搭配的风格维度预设（PRD 4.5）。
+ *
+ * 与衣物的自由 styleTags 不同，这是给用户切换的固定风格意图选项，
+ * 后端据此作 prompt 软约束，引导 AI 往该风格靠。
+ */
+export const STYLE_OPTIONS = [
+  '极简',
+  '通勤',
+  '温柔',
+  '复古',
+  '街头',
+  '运动',
+] as const;
+export type StyleOption = (typeof STYLE_OPTIONS)[number];
+
+/**
  * 对象存储资源类型：决定图片存进用户目录下的哪个子目录。
  *
  * 上传路径为 `<根目录>/<userId>/<资源类型>/<uuid>.<ext>`——

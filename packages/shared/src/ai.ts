@@ -14,6 +14,7 @@ import {
   THICKNESS,
   SEASONS,
   FORMALITY,
+  type Season,
 } from './enums';
 import type { Garment } from './garment';
 
@@ -86,6 +87,8 @@ export const WardrobeBriefItemSchema = z.object({
   color: z.string(),
   seasons: z.array(z.enum(SEASONS)),
   formality: z.enum(FORMALITY),
+  /** 风格标签：智能搭配按风格约束时喂给模型；今日推荐可传空数组 */
+  styleTags: z.array(z.string()).default([]),
 });
 export type WardrobeBriefItem = z.infer<typeof WardrobeBriefItemSchema>;
 
@@ -95,6 +98,16 @@ export const RecommendInputSchema = z.object({
   weather: RecommendWeatherSchema.optional(),
   /** 场合，可选 */
   occasion: z.string().optional(),
+  /**
+   * 目标风格（智能搭配维度）；作 prompt 软约束，引导模型往该风格靠。
+   * 今日推荐不传。
+   */
+  style: z.string().optional(),
+  /**
+   * 目标季节（智能搭配维度）；后端已按季节硬过滤衣橱，此处再显式告知模型，
+   * 强化「只用当季」约束。今日推荐不传（其季节感知交给天气）。
+   */
+  season: z.enum(SEASONS).optional(),
   /** 衣橱摘要 */
   wardrobe: z.array(WardrobeBriefItemSchema),
   /** 个性化偏好：越用越懂你 */
@@ -192,4 +205,44 @@ export interface TodayRecommendation {
   weather: RecommendWeather | null;
   /** 推荐套装列表；locked / empty 时为空数组 */
   outfits: RecommendedOutfitView[];
+}
+
+/* ============================================================
+   智能搭配：按 场合/风格/季节 维度切换的搭配（PRD 4.5）
+   ============================================================ */
+
+/**
+ * 智能搭配返回。
+ *
+ * 与今日推荐同构但不含天气（搭配不绑定当下天气，由用户选的维度决定），
+ * 且多一个 thin 态：
+ * - locked：整个衣橱件数不足解锁阈值，引导继续添加
+ * - thin：衣橱够，但所选季节下的当季衣物不足，提示换季节或添当季衣物
+ * - ok：正常出搭配
+ * - empty：料够但 AI 没产出可用套装（兜底，前端提示重试）
+ */
+export interface MatchedOutfits {
+  status: 'locked' | 'thin' | 'ok' | 'empty';
+  /** 当前衣橱有效件数（排除闲置/软删除） */
+  garmentCount: number;
+  /** 解锁所需件数（= RECOMMEND_UNLOCK_THRESHOLD） */
+  unlockThreshold: number;
+  /** 本次搭配采用的季节维度（跟随请求；缺省由后端按当前月份推断后回填） */
+  season: Season;
+  /** 搭配套装列表；locked / thin / empty 时为空数组 */
+  outfits: RecommendedOutfitView[];
+}
+
+/**
+ * 按公历月份推断当前季节（北半球常识）。
+ * 前后端共用：前端进页面预选季节 chip，后端 season 缺省时兜底。
+ * @param month 1~12 月；缺省取当前月
+ * @returns 对应季节
+ */
+export function seasonOfMonth(month?: number): Season {
+  const m = month ?? new Date().getMonth() + 1;
+  if (m >= 3 && m <= 5) return '春';
+  if (m >= 6 && m <= 8) return '夏';
+  if (m >= 9 && m <= 11) return '秋';
+  return '冬';
 }
