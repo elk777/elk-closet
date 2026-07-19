@@ -8,15 +8,16 @@
 			}
 		},
 		{
-			"path": "pages/garment/detail",
+			"path": "pages/closet/closet",
 			"style": {
-				"navigationBarTitleText": "衣物详情"
+				"navigationBarTitleText": "我的衣橱",
+				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/today/today",
+			"path": "pages/garment/detail",
 			"style": {
-				"navigationBarTitleText": "今日推荐"
+				"navigationBarTitleText": "衣物详情"
 			}
 		},
 		{

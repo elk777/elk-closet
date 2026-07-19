@@ -1,6 +1,6 @@
 <template>
   <view class="home">
-    <!-- 顶栏：衣柜名 + 件数 + 今日推荐入口。
+    <!-- 顶栏：Logo + 衣柜名 + 图标工具栏（衣橱/日记/搭配/看板）。
          custom 导航栏下须自避状态栏（下移）与微信胶囊（右侧留白），避免被刘海/胶囊覆盖 -->
     <view
       class="topbar"
@@ -13,155 +13,127 @@
         <view class="logo">衣</view>
         <text class="name">{{ closetName }}</text>
       </view>
-      <view class="topbar__right">
-        <view class="entry" @click="goMatch">
-          <text class="entry__t">搭配</text>
+      <view class="tools">
+        <view class="tool" @click="goCloset">
+          <AppIcon name="closet" :size="40" color="#6b6862" />
         </view>
-        <view class="entry" @click="goBoard">
-          <text class="entry__t">看板</text>
+        <view class="tool" @click="goDiary">
+          <AppIcon name="diary" :size="40" color="#6b6862" />
         </view>
-        <view class="entry" @click="goDiary">
-          <text class="entry__t">日记</text>
+        <view class="tool" @click="goMatch">
+          <AppIcon name="match" :size="40" color="#6b6862" />
         </view>
-        <view class="today-entry" @click="goToday">
-          <text class="today-entry__t">今日推荐</text>
+        <view class="tool" @click="goBoard">
+          <AppIcon name="board" :size="40" color="#6b6862" />
         </view>
       </view>
     </view>
 
-    <!-- 搜索框：一个框搜所有维度 + 状态词（PRD 4.4）。有衣物时才显示 -->
-    <view v-if="!loading && garments.length > 0" class="searchwrap">
-      <view class="search">
-        <text class="search__ico">🔍</text>
-        <input
-          class="search__input"
-          v-model="keyword"
-          placeholder="搜关键词、颜色、风格、场合…"
-          confirm-type="search"
-          @focus="suggestOpen = true"
-          @blur="onSearchBlur"
-        />
-        <text v-if="keyword" class="search__clr" @click="clearKeyword">×</text>
+    <!-- 常驻搜索栏：点击进衣橱页搜索（PRD 4.4 全局搜索入口） -->
+    <view class="searchwrap">
+      <view class="search" @click="goCloset">
+        <AppIcon name="search" :size="30" color="#a8a49c" />
+        <text class="search__ph">搜关键词、颜色、风格、场合…</text>
       </view>
+    </view>
 
-      <!-- 联想标签：聚焦时出，从衣橱现有数据 + 状态词生成（PRD 4.4 输入即联想） -->
-      <view v-if="suggestOpen && suggestions.length" class="suggest">
-        <view
-          v-for="s in suggestions"
-          :key="s"
-          class="suggest__chip"
-          @click="applySuggestion(s)"
-        >
-          {{ s }}
+    <!-- 天气卡：有天气出实况，无天气（未配置/未授权定位）出中性占位 -->
+    <view class="weather">
+      <view v-if="rec?.weather" class="weather__main">
+        <text class="weather__temp">{{ Math.round(rec.weather.temp) }}°</text>
+        <view class="weather__meta">
+          <text class="weather__desc">{{ rec.weather.desc }}</text>
+          <text class="weather__feels">体感 {{ Math.round(rec.weather.feels) }}°</text>
         </view>
       </view>
+      <view v-else class="weather__main">
+        <text class="weather__temp">—°</text>
+        <text class="weather__desc">天气按季节估算</text>
+      </view>
+      <text v-if="rec?.weather" class="weather__hint">已按今日天气为你挑衣</text>
+      <text v-else class="weather__hint">开启定位后可按实时天气推荐</text>
+    </view>
+
+    <view class="sec-title">
+      <text class="sec-title__t">今日推荐</text>
+      <text
+        v-if="rec?.status === 'ok'"
+        class="sec-title__link"
+        @click="reload"
+      >
+        {{ loading ? '搭配中…' : '换一套 ↻' }}
+      </text>
     </view>
 
     <!-- 加载中 -->
     <view v-if="loading" class="state">
-      <AppLoading text="正在加载衣橱…" />
+      <AppLoading text="正在为你搭配…" />
     </view>
 
-    <!-- 首启空态：欢迎 + 引导添加第一件（PRD 4.9 冷启动） -->
-    <view v-else-if="garments.length === 0" class="empty">
-      <text class="empty-t">拍下第一件衣服，我来帮你打理</text>
-      <text class="empty-s">添加 3-5 件，解锁第一套专属搭配</text>
-      <view class="empty-cta" @click="showAdd = true">
-        <text>添加第一件衣服</text>
+    <!-- 件数不足：解锁引导（PRD 4.9 冷启动钩子） -->
+    <view v-else-if="rec?.status === 'locked'" class="unlock">
+      <text class="unlock__t">
+        再添 {{ rec.unlockThreshold - rec.garmentCount }} 件，解锁今日推荐
+      </text>
+      <text class="unlock__s">
+        衣橱里有 {{ rec.unlockThreshold }} 件以上，我才好帮你搭出一套
+      </text>
+      <view class="unlock__bar">
+        <view class="unlock__bar-fill" :style="{ width: progress + '%' }" />
+      </view>
+      <view class="unlock__cta" @click="goCloset">
+        <text>去添加衣物</text>
       </view>
     </view>
 
-    <!-- 搜索态：命中结果网格，无结果走空态（PRD 5.6.4） -->
-    <template v-else-if="searching">
-      <view class="search-summary">
-        “<text class="search-summary__kw">{{ keyword.trim() }}</text>” 找到
-        <text class="search-summary__kw">{{ searchResult.length }}</text> 件
-      </view>
-      <view v-if="searchResult.length === 0" class="empty">
-        <text class="empty-t">没找到相关衣物，换个词试试</text>
-        <view class="suggest suggest--inline">
-          <view
-            v-for="s in suggestions"
-            :key="s"
-            class="suggest__chip"
-            @click="applySuggestion(s)"
-          >
-            {{ s }}
+    <!-- 有推荐：套装卡列表 -->
+    <view v-else-if="rec?.status === 'ok'" class="outfits">
+      <view v-for="(o, i) in rec.outfits" :key="i" class="outfit">
+        <view class="outfit__head">
+          <view class="outfit__tags">
+            <AppTag v-if="o.occasion">{{ o.occasion }}</AppTag>
+            <AppTag v-if="o.styleTag">{{ o.styleTag }}</AppTag>
           </view>
+          <text class="outfit__score">匹配度 {{ o.matchScore }}</text>
         </view>
-      </view>
-      <view v-else class="grid">
-        <GarmentCard
-          v-for="item in searchResult"
-          :key="item.id"
-          :garment="item"
-          @tap="goDetail(item.id)"
-        />
-      </view>
-    </template>
 
-    <!-- 有衣物：分类筛选 + 网格 -->
-    <template v-else>
-      <!-- 分类筛选：全部 + 服装组 + 配饰组 -->
-      <scroll-view class="filter" scroll-x :show-scrollbar="false">
-        <view class="filter__row">
-          <view
-            class="chip"
-            :class="{ 'chip--on': activeCategory === ALL }"
-            @click="activeCategory = ALL"
-          >
-            全部
-          </view>
-          <view class="chip-group">
+        <!-- 单品横排：点进详情 -->
+        <scroll-view class="outfit__items" scroll-x :show-scrollbar="false">
+          <view class="outfit__row">
             <view
-              v-for="c in clothingCategories"
-              :key="c"
-              class="chip"
-              :class="{ 'chip--on': activeCategory === c }"
-              @click="activeCategory = c"
+              v-for="item in o.items"
+              :key="item.id"
+              class="piece"
+              @click="goDetail(item.id)"
             >
-              {{ c }}
+              <image
+                class="piece__img"
+                :src="item.cutoutImageUrl || item.originalImageUrl"
+                mode="aspectFill"
+              />
+              <text class="piece__name">{{ item.name }}</text>
             </view>
           </view>
-          <view class="chip-divider" />
-          <view class="chip-group">
-            <view
-              v-for="c in accessoryCategories"
-              :key="c"
-              class="chip"
-              :class="{ 'chip--on': activeCategory === c }"
-              @click="activeCategory = c"
-            >
-              {{ c }}
-            </view>
-          </view>
+        </scroll-view>
+
+        <!-- 推荐理由 -->
+        <text class="outfit__reason">{{ o.reason }}</text>
+
+        <!-- 采纳这套去打卡：带入单品与来源 ai -->
+        <view class="adopt" @click="goCheckIn(o.items)">
+          <text>采纳这套去打卡</text>
         </view>
-      </scroll-view>
-
-      <!-- 筛选后为空：分类空态（PRD 5.6.4） -->
-      <view v-if="filtered.length === 0" class="empty">
-        <text class="empty-t">这个分类还没有衣物</text>
-        <text class="empty-s">换个分类看看，或添加一件</text>
       </view>
-
-      <!-- 衣物网格 -->
-      <view v-else class="grid">
-        <GarmentCard
-          v-for="item in filtered"
-          :key="item.id"
-          :garment="item"
-          @tap="goDetail(item.id)"
-        />
-      </view>
-    </template>
-
-    <!-- 悬浮添加按钮 -->
-    <view class="fab" @click="showAdd = true">
-      <text>＋ 添加衣物</text>
     </view>
 
-    <!-- 录入弹层 -->
-    <AddGarmentSheet v-model:show="showAdd" @created="onCreated" />
+    <!-- 件数够但没搭出来：兜底提示 -->
+    <view v-else-if="rec?.status === 'empty'" class="empty">
+      <text class="empty-t">这会儿没搭出满意的一套</text>
+      <text class="empty-s">稍后再试，或去衣橱自己挑挑</text>
+      <view class="empty-cta" @click="reload">
+        <text>再试一次</text>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -169,118 +141,79 @@
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import {
-  CLOTHING_CATEGORIES,
-  ACCESSORY_CATEGORIES,
   DEFAULT_CLOSET_NAME,
-  searchGarments,
-  suggestKeywords,
-  type Garment,
+  type TodayRecommendation,
 } from '@zhiyi/shared';
-import AddGarmentSheet from '../../components/garment/AddGarmentSheet.vue';
-import GarmentCard from '../../components/garment/GarmentCard.vue';
 import AppLoading from '../../components/base/AppLoading.vue';
-import { listGarments } from '../../api/garment.api';
+import AppTag from '../../components/base/AppTag.vue';
+import AppIcon from '../../components/base/AppIcon.vue';
+import { getTodayRecommendation } from '../../api/recommend.api';
+import { getCoords } from '../../composables/useLocation';
 import { useUserStore } from '../../store/user';
 import { useSafeArea } from '../../composables/useSafeArea';
 
 /** custom 导航栏下的安全区：顶栏下移避状态栏、右侧留白避微信胶囊 */
 const { statusBarHeight, menuInset } = useSafeArea();
 
-/** “全部”筛选标识（用不会与品类冲突的常量） */
-const ALL = '__all__';
-
-const garments = ref<Garment[]>([]);
+const rec = ref<TodayRecommendation | null>(null);
 const loading = ref(true);
-const showAdd = ref(false);
-const activeCategory = ref<string>(ALL);
-
-/** 搜索关键词；非空即进入搜索态（覆盖分类筛选） */
-const keyword = ref('');
-/** 联想标签浮层是否展开（聚焦时开，选词/失焦后收） */
-const suggestOpen = ref(false);
-
-const clothingCategories = CLOTHING_CATEGORIES;
-const accessoryCategories = ACCESSORY_CATEGORIES;
-
+/**
+ * 是否已首次加载过。
+ * 今日推荐是首页，load() 含定位 + AI 生成（重操作），若每次 onShow（从任意
+ * 二级页返回都会触发）都重跑，会拖慢并让「今天这套」意外变化。故只在首次进入
+ * 时自动 load，返回态不刷新；用户想换用「换一套」手动触发。
+ */
+const loaded = ref(false);
 const userStore = useUserStore();
+
 /** 衣柜名：登录后取用户自定义名，未就绪用默认名兜底 */
 const closetName = computed(
   () => userStore.user?.closetName || DEFAULT_CLOSET_NAME,
 );
 
-/** 是否处于搜索态：关键词非空 */
-const searching = computed(() => keyword.value.trim().length > 0);
-
-/** 搜索结果（多维匹配 + 状态词，算法在 shared） */
-const searchResult = computed(() => searchGarments(garments.value, keyword.value));
-
-/** 联想词：从衣橱现有数据 + 状态词生成，随输入过滤 */
-const suggestions = computed(() =>
-  suggestKeywords(garments.value, keyword.value),
-);
-
-/** 按当前选中品类过滤；“全部”时不过滤 */
-const filtered = computed(() => {
-  if (activeCategory.value === ALL) return garments.value;
-  return garments.value.filter((g) => g.category === activeCategory.value);
+/** 解锁进度百分比（封顶 100），locked 态用 */
+const progress = computed(() => {
+  if (!rec.value) return 0;
+  const { garmentCount, unlockThreshold } = rec.value;
+  return Math.min(100, Math.round((garmentCount / unlockThreshold) * 100));
 });
 
-/** 点选联想词：落定关键词并收起浮层 */
-function applySuggestion(word: string) {
-  keyword.value = word;
-  suggestOpen.value = false;
-}
-
-/** 清空关键词，回落到分类筛选 */
-function clearKeyword() {
-  keyword.value = '';
-  suggestOpen.value = false;
-}
-
-// 失焦延迟收起浮层，避免点击联想词时浮层先消失导致 click 落空
-function onSearchBlur() {
-  setTimeout(() => {
-    suggestOpen.value = false;
-  }, 150);
-}
-
 /**
- * 加载衣橱列表。
- * 先确保已登录（onLaunch 的登录可能尚未完成，此处幂等自愈，避免首帧 401）。
- * 失败提示已由请求器统一处理，这里只兜底停 loading。
+ * 拉取今日推荐。
+ * 先幂等确保登录，再尝试取定位（失败静默降级，后端用兜底城市）。
+ * 失败提示由请求器统一处理，这里只兜底停 loading。
  */
-async function loadGarments() {
+async function load() {
   loading.value = true;
   try {
     await userStore.ensureLogin();
-    garments.value = await listGarments();
+    const coords = await getCoords();
+    rec.value = await getTodayRecommendation({
+      lon: coords?.lon,
+      lat: coords?.lat,
+    });
+    loaded.value = true;
   } catch {
-    // 错误提示已由 request / ensureLogin 统一处理
+    // 提示已由 request / ensureLogin 统一处理
   } finally {
     loading.value = false;
   }
 }
 
-// 每次进入页面刷新（录入返回、详情返回都会触发），保证列表最新
+/** 换一套 / 再试一次：重新生成 */
+function reload() {
+  if (loading.value) return;
+  load();
+}
+
+// 首次进入才自动 load；返回态（loaded 已 true）不重跑，避免重复定位/生成
 onShow(() => {
-  loadGarments();
+  if (!loaded.value) load();
 });
 
-/** 录入成功：关弹层 + 刷新列表 */
-function onCreated() {
-  showAdd.value = false;
-  uni.showToast({ title: '已添加', icon: 'success' });
-  loadGarments();
-}
-
-/** 跳衣物详情 */
-function goDetail(id: string) {
-  uni.navigateTo({ url: `/pages/garment/detail?id=${id}` });
-}
-
-/** 进今日推荐 */
-function goToday() {
-  uni.navigateTo({ url: '/pages/today/today' });
+/** 进我的衣橱（含搜索/筛选/录入） */
+function goCloset() {
+  uni.navigateTo({ url: '/pages/closet/closet' });
 }
 
 /** 进穿搭日记（月历回看） */
@@ -288,14 +221,31 @@ function goDiary() {
   uni.navigateTo({ url: '/pages/diary/diary' });
 }
 
+/** 进智能搭配（场合/风格/季节多维切换） */
+function goMatch() {
+  uni.navigateTo({ url: '/pages/match/match' });
+}
+
 /** 进衣橱看板（洞察） */
 function goBoard() {
   uni.navigateTo({ url: '/pages/board/board' });
 }
 
-/** 进智能搭配（场合/风格/季节多维切换） */
-function goMatch() {
-  uni.navigateTo({ url: '/pages/match/match' });
+/** 跳衣物详情 */
+function goDetail(id: string) {
+  uni.navigateTo({ url: `/pages/garment/detail?id=${id}` });
+}
+
+/**
+ * 采纳这套去打卡：带入该套单品 id 与来源 ai，跳打卡页。
+ * 用户在打卡页仍可增减单品、补场合备注。
+ * @param items 该套搭配的完整单品（取 id 传入）
+ */
+function goCheckIn(items: { id: string }[]) {
+  const itemIds = items.map((i) => i.id).join(',');
+  uni.navigateTo({
+    url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
+  });
 }
 </script>
 
@@ -303,13 +253,13 @@ function goMatch() {
 .home {
   min-height: 100vh;
   background: $zy-bg;
-  padding-bottom: 120px;
+  padding: 0 $zy-gap-lg $zy-gap-lg;
 }
 .topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
+  padding: 12px 0;
 }
 .brand {
   display: flex;
@@ -332,40 +282,203 @@ function goMatch() {
   font-weight: 700;
   color: $zy-ink;
 }
-.topbar__right {
+.tools {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 18px;
 }
-.today-entry {
-  padding: 6px 14px;
-  border-radius: $zy-radius-pill;
-  background: $zy-accent;
+.tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.today-entry__t {
-  font-size: 12px;
-  font-weight: 600;
-  color: #fff;
+.searchwrap {
+  padding: 2px 0 12px;
 }
-.entry {
-  padding: 6px 14px;
-  border-radius: $zy-radius-pill;
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
   background: $zy-surface;
   border: 1px solid $zy-line;
+  border-radius: $zy-radius-sm;
 }
-.entry__t {
+.search__ph {
+  flex: 1;
+  font-size: 14px;
+  color: $zy-ink-3;
+}
+.weather {
+  background: $zy-accent;
+  border-radius: $zy-radius;
+  padding: 24px 20px;
+  color: #fff;
+}
+.weather__main {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+.weather__temp {
+  font-size: 40px;
+  font-weight: 700;
+  color: #fff;
+}
+.weather__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.weather__desc {
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.weather__feels {
   font-size: 12px;
-  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+.weather__hint {
+  display: block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.sec-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+.sec-title__t {
+  font-size: 17px;
+  font-weight: 700;
+  color: $zy-ink;
+}
+.sec-title__link {
+  font-size: 13px;
   color: $zy-ink-2;
 }
 .state {
-  padding-top: 160px;
+  padding-top: 80px;
+}
+.unlock {
+  margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.unlock__t {
+  font-size: 17px;
+  font-weight: 700;
+  color: $zy-ink;
+}
+.unlock__s {
+  margin-top: 10px;
+  font-size: 13px;
+  color: $zy-ink-2;
+  text-align: center;
+}
+.unlock__bar {
+  width: 200px;
+  height: 6px;
+  border-radius: 3px;
+  background: $zy-line;
+  margin: 24px 0;
+  overflow: hidden;
+}
+.unlock__bar-fill {
+  height: 100%;
+  background: $zy-accent;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.unlock__cta {
+  padding: 14px 28px;
+  border-radius: 30px;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+.outfits {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.outfit {
+  background: $zy-surface;
+  border-radius: $zy-radius;
+  padding: 18px;
+  box-shadow: $zy-shadow-soft;
+}
+.outfit__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.outfit__tags {
+  display: flex;
+  gap: 8px;
+}
+.outfit__score {
+  font-size: 12px;
+  font-weight: 600;
+  color: $zy-accent;
+}
+.outfit__items {
+  white-space: nowrap;
+  margin: 14px 0;
+}
+.outfit__row {
+  display: inline-flex;
+  gap: 12px;
+}
+.piece {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 96px;
+}
+.piece__img {
+  width: 96px;
+  height: 96px;
+  border-radius: $zy-radius-sm;
+  background: $zy-bg;
+}
+.piece__name {
+  margin-top: 6px;
+  width: 96px;
+  font-size: 12px;
+  color: $zy-ink-2;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.outfit__reason {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: $zy-ink-2;
+  line-height: 1.6;
+}
+.adopt {
+  margin-top: 14px;
+  text-align: center;
+  padding: 12px;
+  border-radius: $zy-radius-sm;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
 }
 .empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 140px;
+  padding-top: 60px;
 }
 .empty-t {
   font-size: 16px;
@@ -385,115 +498,5 @@ function goMatch() {
   color: #fff;
   font-size: 15px;
   font-weight: 600;
-}
-.searchwrap {
-  padding: 2px 20px 8px;
-  position: relative;
-}
-.search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: $zy-surface;
-  border: 1px solid $zy-line;
-  border-radius: $zy-radius-sm;
-}
-.search__ico {
-  font-size: 14px;
-  color: $zy-ink-3;
-}
-.search__input {
-  flex: 1;
-  font-size: 14px;
-  color: $zy-ink;
-}
-.search__clr {
-  font-size: 18px;
-  color: $zy-ink-3;
-  padding: 0 4px;
-}
-.suggest {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-.suggest--inline {
-  justify-content: center;
-  margin-top: 20px;
-}
-.suggest__chip {
-  padding: 6px 14px;
-  background: $zy-surface;
-  border: 1px solid $zy-line;
-  border-radius: $zy-radius-pill;
-  font-size: 13px;
-  color: $zy-ink-2;
-}
-.search-summary {
-  padding: 0 20px 12px;
-  font-size: 13px;
-  color: $zy-ink-2;
-}
-.search-summary__kw {
-  color: $zy-ink;
-  font-weight: 700;
-}
-.filter {
-  white-space: nowrap;
-  padding: 4px 0 12px;
-}
-.filter__row {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-}
-.chip-group {
-  display: inline-flex;
-  gap: 8px;
-}
-.chip-divider {
-  width: 1px;
-  height: 20px;
-  background: $zy-line;
-  margin: 0 4px;
-}
-.chip {
-  display: inline-block;
-  padding: 8px 16px;
-  background: $zy-surface;
-  border: 1px solid $zy-line;
-  border-radius: $zy-radius-pill;
-  font-size: 13px;
-  font-weight: 600;
-  color: $zy-ink-2;
-}
-.chip--on {
-  background: $zy-accent;
-  color: #fff;
-  border-color: $zy-accent;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20rpx;
-  padding: 0 20px;
-}
-.fab {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  /* 避让全面屏底部 home indicator，横条机型也不会压住按钮 */
-  bottom: calc(40px + constant(safe-area-inset-bottom));
-  bottom: calc(40px + env(safe-area-inset-bottom));
-  padding: 14px 28px;
-  border-radius: 30px;
-  background: $zy-accent;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 600;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
 }
 </style>
