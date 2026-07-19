@@ -6,10 +6,11 @@
  */
 
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import type { TodayRecommendation } from '@zhiyi/shared';
+import type { MatchedOutfits, TodayRecommendation } from '@zhiyi/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { User } from '../prisma/client';
+import { MatchOutfitDto } from './dto/match-outfit.dto';
 import { TodayRecommendDto } from './dto/today-recommend.dto';
 import { RecommendService } from './recommend.service';
 
@@ -30,5 +31,19 @@ export class RecommendController {
     @Body() dto: TodayRecommendDto,
   ): Promise<TodayRecommendation> {
     return this.recommend.today(user.id, dto);
+  }
+
+  /**
+   * 智能搭配：按场合 / 风格 / 季节维度从用户衣橱搭配 1~3 套。
+   * @param user 当前登录用户
+   * @param dto 场合 / 风格 / 季节维度（均可选）
+   * @returns 四态搭配结果
+   */
+  @Post('outfits')
+  matchOutfits(
+    @CurrentUser() user: User,
+    @Body() dto: MatchOutfitDto,
+  ): Promise<MatchedOutfits> {
+    return this.recommend.matchOutfits(user.id, dto);
   }
 }

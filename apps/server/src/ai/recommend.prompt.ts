@@ -19,14 +19,15 @@ import {
  * - itemIds 只能取自用户给出的衣橱清单，严禁编造 id（编造的会被后端二次剔除）
  * - 只返回 JSON，字段严格对齐 RecommendOutputSchema
  */
-export const RECOMMEND_SYSTEM_PROMPT = `你是一位专业的私人穿搭造型师。根据用户提供的衣橱清单、当前天气与场合，从衣橱中挑选真实存在的单品，搭配出 1~3 套完整、协调、适合当下的穿着方案。
+export const RECOMMEND_SYSTEM_PROMPT = `你是一位专业的私人穿搭造型师。根据用户提供的衣橱清单，以及天气、场合、风格、季节等约束，从衣橱中挑选真实存在的单品，搭配出 1~3 套完整、协调、贴合约束的穿着方案。
 
 严格要求：
 1. 直接输出一个 JSON 对象，不要任何思考过程、解释文字或 markdown 代码块，第一个字符必须是 {。
 2. itemIds 必须是「字符串数组」，每个元素就是清单里的 id 原文（如 ["a","b"]）；绝不可写成对象数组、不可加 type/name 等额外字段、不可编造清单里没有的 id。
 3. 每套至少包含一件主体服装；有外套/鞋子/配饰时应合理组合，避免季节或场合冲突（如寒冬不推短袖、正式场合不配拖鞋）。
-4. matchScore 为该套与当前天气+场合的契合度，0~100 的整数。
-5. reason 用一句自然、具体、可感的中文说明推荐理由（结合天气或场合），不要空泛套话。
+4. 若指定了风格，尽量让每套整体贴合该风格；若指定了场合，正式度要匹配（如正式场合不用运动休闲款）。
+5. matchScore 为该套与给定约束（天气/场合/风格/季节）的契合度，0~100 的整数。
+6. reason 用一句自然、具体、可感的中文说明推荐理由（结合给定的约束），不要空泛套话。
 
 严格按以下结构返回，字段名与类型不得改动：
 {
@@ -51,7 +52,7 @@ export const RECOMMEND_SYSTEM_PROMPT = `你是一位专业的私人穿搭造型�
  * @returns 拼接好的用户消息
  */
 export function buildRecommendUserPrompt(input: RecommendInput): string {
-  const { weather, occasion, wardrobe } = input;
+  const { weather, occasion, style, season, wardrobe } = input;
 
   const weatherLine = weather
     ? `当前天气：${weather.desc}，气温 ${weather.temp}℃，体感 ${weather.feels}℃，降水概率 ${Math.round(
@@ -61,16 +62,24 @@ export function buildRecommendUserPrompt(input: RecommendInput): string {
 
   const occasionLine = occasion ? `场合：${occasion}。` : '场合：日常。';
 
-  // 衣橱清单逐行列出，id 在最前，方便模型准确回填 itemIds
+  // 智能搭配维度：仅在指定时追加，避免给今日推荐塞无关约束
+  const seasonLine = season ? `季节：${season}，清单已只含当季衣物。` : '';
+  const styleLine = style ? `目标风格：${style}，请让每套整体贴合该风格。` : '';
+
+  // 衣橱清单逐行列出，id 在最前，方便模型准确回填 itemIds；
+  // 带上风格标签，供按风格搭配时参考（无标签则省略该段）
   const wardrobeLines = wardrobe
-    .map(
-      (g) =>
-        `- id=${g.id} | ${g.category} | ${g.color} | 季节:${g.seasons.join('/')} | ${g.formality}`,
-    )
+    .map((g) => {
+      const tags = g.styleTags.length ? ` | 风格:${g.styleTags.join('/')}` : '';
+      return `- id=${g.id} | ${g.category} | ${g.color} | 季节:${g.seasons.join('/')} | ${g.formality}${tags}`;
+    })
     .join('\n');
 
-  return `${weatherLine}
-${occasionLine}
+  const constraintLines = [weatherLine, occasionLine, seasonLine, styleLine]
+    .filter(Boolean)
+    .join('\n');
+
+  return `${constraintLines}
 
 我的衣橱清单（只能从这些 id 中选）：
 ${wardrobeLines}
