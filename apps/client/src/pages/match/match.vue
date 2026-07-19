@@ -228,9 +228,9 @@ onLoad(() => {
   load();
 });
 
-/** 返回衣橱去添加 */
+/** 去衣橱添加：衣橱已独立成页，显式跳转（不能靠 navigateBack，来源页不定） */
 function goAddGarment() {
-  uni.navigateBack();
+  uni.navigateTo({ url: '/pages/closet/closet' });
 }
 
 /** 跳衣物详情 */
