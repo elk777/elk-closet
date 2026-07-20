@@ -20,6 +20,7 @@ type IconName =
   | 'board' // 衣橱看板（柱状图）
   | 'settings' // 设置（齿轮）——预留，本期顶栏暂不展示
   | 'search' // 搜索（放大镜）
+  | 'plus' // 添加（加号）——悬浮添加按钮
   | 'back'; // 返回（左箭头）
 
 interface Props {
@@ -48,6 +49,7 @@ const PATHS: Record<IconName, string> = {
   settings:
     '<circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.5M12 18.5V21M4.2 7l2.1 1.2M17.7 15.8l2.1 1.2M4.2 17l2.1-1.2M17.7 8.2l2.1-1.2"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
 };
 

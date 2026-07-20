@@ -1,30 +1,36 @@
 <template>
   <view class="home">
-    <!-- 顶栏：Logo + 衣柜名 + 图标工具栏（衣橱/日记/搭配/看板）。
-         custom 导航栏下须自避状态栏（下移）与微信胶囊（右侧留白），避免被刘海/胶囊覆盖 -->
-    <view
-      class="topbar"
-      :style="{
-        paddingTop: statusBarHeight + 12 + 'px',
-        paddingRight: 20 + menuInset + 'px',
-      }"
-    >
+    <!-- 顶栏：左侧品牌区竖排跨两行高度居中；右侧用与胶囊等高的占位块预留胶囊空间，
+         图标工具栏紧跟其下自成第二行——如此图标必落在胶囊正下方，各机型胶囊高度不一也不会被遮。
+         custom 导航栏下 paddingTop=胶囊上沿 y 坐标，整体避开状态栏/刘海。 -->
+    <view class="topbar" :style="{ paddingTop: menuTop + 'px' }">
+      <!-- 左：品牌区，logo + 衣柜名 + 副标题，竖排跨两行高并垂直居中 -->
       <view class="brand">
         <view class="logo">衣</view>
-        <text class="name">{{ closetName }}</text>
+        <view class="brand__text">
+          <text class="name">{{ closetName }}</text>
+          <text v-if="garmentCount != null" class="brand__tip">
+            {{ garmentCount }} 件 · 点击管理
+          </text>
+        </view>
       </view>
-      <view class="tools">
-        <view class="tool" @click="goCloset">
-          <AppIcon name="closet" :size="40" color="#6b6862" />
-        </view>
-        <view class="tool" @click="goDiary">
-          <AppIcon name="diary" :size="40" color="#6b6862" />
-        </view>
-        <view class="tool" @click="goMatch">
-          <AppIcon name="match" :size="40" color="#6b6862" />
-        </view>
-        <view class="tool" @click="goBoard">
-          <AppIcon name="board" :size="40" color="#6b6862" />
+      <!-- 右：竖排。首为等高占位块（让位悬浮胶囊），次为图标工具栏 -->
+      <view class="toprail">
+        <!-- 占位块：高度=胶囊高度，把下方图标行顶到胶囊之下 -->
+        <view class="toprail__cap" :style="{ height: menuHeight + 'px' }" />
+        <view class="tools">
+          <view class="tool" @click="goCloset">
+            <AppIcon name="closet" :size="42" color="#6b6862" />
+          </view>
+          <view class="tool" @click="goDiary">
+            <AppIcon name="diary" :size="42" color="#6b6862" />
+          </view>
+          <view class="tool" @click="goMatch">
+            <AppIcon name="match" :size="42" color="#6b6862" />
+          </view>
+          <view class="tool" @click="goBoard">
+            <AppIcon name="board" :size="42" color="#6b6862" />
+          </view>
         </view>
       </view>
     </view>
@@ -147,6 +153,15 @@
         <text>再试一次</text>
       </view>
     </view>
+
+    <!-- 悬浮添加按钮：首页直接录入，录入后件数变化可能解锁/刷新推荐（PRD 4.1 生命线） -->
+    <view class="fab" @click="showAdd = true">
+      <AppIcon name="plus" :size="40" color="#fff" />
+      <text class="fab__t">添加衣物</text>
+    </view>
+
+    <!-- 录入弹层 -->
+    <AddGarmentSheet v-model:show="showAdd" @created="onCreated" />
   </view>
 </template>
 
@@ -160,13 +175,14 @@ import {
 import AppLoading from '../../components/base/AppLoading.vue';
 import AppTag from '../../components/base/AppTag.vue';
 import AppIcon from '../../components/base/AppIcon.vue';
+import AddGarmentSheet from '../../components/garment/AddGarmentSheet.vue';
 import { getTodayRecommendation } from '../../api/recommend.api';
 import { getCoords } from '../../composables/useLocation';
 import { useUserStore } from '../../store/user';
 import { useSafeArea } from '../../composables/useSafeArea';
 
 /** custom 导航栏下的安全区：顶栏下移避状态栏、右侧留白避微信胶囊 */
-const { statusBarHeight, menuInset } = useSafeArea();
+const { menuTop, menuHeight } = useSafeArea();
 
 const rec = ref<TodayRecommendation | null>(null);
 const loading = ref(true);
@@ -177,12 +193,17 @@ const loading = ref(true);
  * 时自动 load，返回态不刷新；用户想换用「换一套」手动触发。
  */
 const loaded = ref(false);
+/** 录入弹层开关：首页直接添加衣物（PRD 首页录入入口） */
+const showAdd = ref(false);
 const userStore = useUserStore();
 
 /** 衣柜名：登录后取用户自定义名，未就绪用默认名兜底 */
 const closetName = computed(
   () => userStore.user?.closetName || DEFAULT_CLOSET_NAME,
 );
+
+/** 衣物件数：来自今日推荐接口；rec 未加载时为 null，副标题隐去 */
+const garmentCount = computed(() => rec.value?.garmentCount ?? null);
 
 /** 解锁进度百分比（封顶 100），locked 态用 */
 const progress = computed(() => {
@@ -234,6 +255,16 @@ onShow(() => {
   if (!loaded.value) load();
 });
 
+/**
+ * 录入成功：关弹层 + 重新生成推荐。
+ * 件数变化可能跨过解锁阈值或改变可搭配单品，故强制刷新（不受 loaded 拦截）。
+ */
+function onCreated() {
+  showAdd.value = false;
+  uni.showToast({ title: '已添加', icon: 'success' });
+  load();
+}
+
 /** 进我的衣橱（含搜索/筛选/录入） */
 function goCloset() {
   uni.navigateTo({ url: '/pages/closet/closet' });
@@ -279,15 +310,38 @@ function goCheckIn(items: { id: string }[]) {
   padding: 0 $zy-gap-lg $zy-gap-lg;
 }
 .topbar {
+  /* 右列高度（胶囊占位块+图标）撑起顶栏；两列底部对齐，
+     使左侧 logo 与右侧图标行齐底，图标仍落在胶囊正下方 */
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  padding: 12px 0;
+  padding-bottom: 4px;
 }
 .brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  min-width: 0;
+}
+.brand__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.toprail {
+  /* 右列竖排：胶囊等高占位块在上，图标工具栏在下 */
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.toprail__cap {
+  /* 纯占位，不渲染任何内容，仅把图标行顶到胶囊下方 */
+  flex-shrink: 0;
+}
+.brand__tip {
+  font-size: 11px;
+  color: $zy-ink-3;
+  margin-top: 2px;
 }
 .logo {
   width: 32px;
@@ -304,16 +358,23 @@ function goCheckIn(items: { id: string }[]) {
   font-size: 18px;
   font-weight: 700;
   color: $zy-ink;
+  /* 单行不换行，避免被压窄时「我的衣橱」折成两行 */
+  white-space: nowrap;
 }
 .tools {
+  /* 落在胶囊占位块正下方那一行；留一点上间距与胶囊分隔 */
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
+  margin-top: 10px;
 }
 .tool {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 纯线条图标，无常驻底色——回归 demo 简约调性，右侧减重与左侧 logo 一重一轻更平衡 */
+  width: 40px;
+  height: 40px;
 }
 .searchwrap {
   padding: 2px 0 12px;
@@ -526,5 +587,28 @@ function goCheckIn(items: { id: string }[]) {
   color: #fff;
   font-size: 15px;
   font-weight: 600;
+}
+/* 悬浮添加按钮：对齐 demo，墨黑胶囊居中悬浮（docs/demo.html .fab） */
+.fab {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  /* 避让全面屏底部 home indicator，横条机型也不会压住按钮 */
+  bottom: calc(28px + constant(safe-area-inset-bottom));
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 52px;
+  padding: 0 24px;
+  border-radius: 30px;
+  background: $zy-accent;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+.fab__t {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
 }
 </style>

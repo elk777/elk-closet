@@ -14,15 +14,26 @@ export function useSafeArea() {
   const statusBarHeight = ref(0);
   /** 顶栏右侧避让宽度（px）：留出微信胶囊按钮占位；非小程序端为 0 */
   const menuInset = ref(0);
+  /**
+   * 胶囊按钮上边缘的 y 坐标（px，相对屏幕顶部，已含状态栏高度）。
+   * 顶栏首行内容应从此处起绘并与胶囊同高，二者才垂直对齐、互不遮挡。
+   * 非小程序端无胶囊，兜底为状态栏高度。
+   */
+  const menuTop = ref(0);
+  /** 胶囊按钮高度（px）：顶栏首行与之等高，实现垂直居中对齐。非小程序端兜底 32 */
+  const menuHeight = ref(32);
 
   const info = uni.getWindowInfo();
   statusBarHeight.value = info.statusBarHeight ?? 0;
+  menuTop.value = statusBarHeight.value;
 
   // #ifdef MP-WEIXIN
-  // 胶囊按钮悬浮于右上角，顶栏右侧内容的右边界须对齐其左边缘
+  // 胶囊按钮悬浮于右上角，顶栏右侧内容的右边界须对齐其左边缘，首行须与其垂直对齐
   const menu = uni.getMenuButtonBoundingClientRect();
   menuInset.value = info.windowWidth - menu.left;
+  menuTop.value = menu.top;
+  menuHeight.value = menu.height;
   // #endif
 
-  return { statusBarHeight, menuInset };
+  return { statusBarHeight, menuInset, menuTop, menuHeight };
 }
