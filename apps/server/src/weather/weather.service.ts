@@ -27,13 +27,37 @@ interface QWeatherNowResponse {
     feelsLike: string;
     /** 天气描述，如「多云」 */
     text: string;
+    /** 相对湿度 %（字符串） */
+    humidity?: string;
+    /** 风向，如「东南风」 */
+    windDir?: string;
+    /** 风力等级，如「2」 */
+    windScale?: string;
     /** 降水量 mm（字符串） */
     precip: string;
   };
 }
 
+/** 和风 GeoAPI 城市查询接口的关注字段（其余字段忽略） */
+interface QWeatherGeoResponse {
+  /** '200' 为成功 */
+  code?: string;
+  location?: Array<{
+    /** 地点名（区县级），如「朝阳」「西湖」 */
+    name?: string;
+    /** 上级行政区（地级市），如「北京」「杭州」 */
+    adm2?: string;
+  }>;
+}
+
 /** 天气缓存有效期：实时天气变化缓慢，10 分钟内同一地点复用，避免每次进页面都打和风 */
 const WEATHER_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * 城市名缓存有效期：同一坐标对应的城市名几乎恒定，故缓存极长（7 天），
+ * 一个位置基本只查一次 GeoAPI，把额外调用量压到可忽略（省费用）。
+ */
+const CITY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** 单次和风请求超时：天气仅为增强项，超过 5s 即放弃降级，不拖垮推荐链路 */
 const WEATHER_TIMEOUT_MS = 5000;
@@ -41,6 +65,12 @@ const WEATHER_TIMEOUT_MS = 5000;
 /** 单条缓存：命中的天气 + 写入时刻 */
 interface WeatherCacheEntry {
   weather: RecommendWeather;
+  at: number;
+}
+
+/** 城市名缓存条目：反查到的城市名 + 写入时刻 */
+interface CityCacheEntry {
+  city: string;
   at: number;
 }
 
@@ -54,6 +84,12 @@ export class WeatherService {
    * key 为归一化坐标（两位小数），同一片区域共享一条，进一步减少调用。
    */
   private readonly cache = new Map<string, WeatherCacheEntry>();
+
+  /**
+   * 按坐标缓存反查到的城市名（内存级）。
+   * 同一坐标城市名几乎不变，故 TTL 极长（CITY_TTL_MS），一个位置基本只查一次 GeoAPI。
+   */
+  private readonly cityCache = new Map<string, CityCacheEntry>();
 
   constructor(configService: ConfigService) {
     this.config = configService.get<WeatherConfig>('weather')!;
@@ -87,9 +123,14 @@ export class WeatherService {
     }
 
     try {
-      const weather = await this.fetchNow(longitude, latitude);
-      this.cache.set(key, { weather, at: Date.now() });
-      return weather;
+      // 天气与城市名并行取：城市名走独立长缓存，失败不影响天气主体（city 留空即可）
+      const [weather, city] = await Promise.all([
+        this.fetchNow(longitude, latitude),
+        this.getCityName(longitude, latitude),
+      ]);
+      const merged: RecommendWeather = { ...weather, city };
+      this.cache.set(key, { weather: merged, at: Date.now() });
+      return merged;
     } catch (e) {
       this.logger.warn(`取天气失败，推荐将按季节降级：${String(e)}`);
       // 取值失败时兜底用过期缓存（有总比没有强），彻底没有才返回 null
@@ -130,15 +171,68 @@ export class WeatherService {
     }
 
     const now = body.now;
+    const precip = Number(now.precip);
     return {
       temp: Number(now.temp),
       feels: Number(now.feelsLike),
-      // now 接口不含紫外线指数，本期先留空描述（推荐 prompt 不强依赖）
+      // now 接口不含紫外线指数，本期不展示紫外线，留空描述（推荐 prompt 不强依赖）
       uv: '',
-      // 降水量>0 视为有雨；now 无概率字段，用有无降水近似为 0/1
-      rain: Number(now.precip) > 0 ? 1 : 0,
+      // 降水量>0 视为有雨；now 无概率字段，用有无降水近似为 0/1（供推荐 prompt）
+      rain: precip > 0 ? 1 : 0,
       desc: now.text,
+      // 以下为展示增强字段（now 已返回，透传给前端天气卡，不额外调接口）
+      humidity: now.humidity !== undefined ? Number(now.humidity) : undefined,
+      windDir: now.windDir,
+      windScale: now.windScale,
+      // 实测降水量 mm，供前端合理展示（区别于上面近似的 0/1 概率）
+      precip: Number.isNaN(precip) ? undefined : precip,
+      // city 由 getCurrent 合并填入（走独立 GeoAPI + 长缓存）
+      city: '',
     };
+  }
+
+  /**
+   * 反查坐标对应的城市名（和风 GeoAPI）。
+   *
+   * 城市名对同一坐标几乎恒定，按坐标长缓存（CITY_TTL_MS），一个位置基本只查一次，
+   * 额外调用量可忽略。查询失败不抛错——城市名是展示增强项，返回空串由前端隐去即可，
+   * 绝不因城市名拖累天气主体。
+   * @param lon 经度
+   * @param lat 纬度
+   * @returns 城市名；失败或无结果返回空串
+   */
+  private async getCityName(lon: number, lat: number): Promise<string> {
+    const key = `${lon.toFixed(2)},${lat.toFixed(2)}`;
+    const cached = this.cityCache.get(key);
+    if (cached && Date.now() - cached.at < CITY_TTL_MS) {
+      return cached.city;
+    }
+
+    try {
+      const host = this.normalizeHost(this.config.apiHost);
+      const location = `${lon.toFixed(2)},${lat.toFixed(2)}`;
+      const url = `${host}/geo/v2/city/lookup?location=${location}`;
+      const res = await fetch(url, {
+        headers: { 'X-QW-Api-Key': this.config.apiKey },
+        signal: AbortSignal.timeout(WEATHER_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        throw new Error(`GeoAPI HTTP ${res.status}`);
+      }
+
+      const body = (await res.json()) as QWeatherGeoResponse;
+      // 取首个匹配地点的地级市名（adm2，如「北京」「杭州」）。
+      // 不用 name（区县级）：和风坐标反查上限两位小数（~1.1km），城区边界会落到相邻区，
+      // 显示区县名易出错（朝阳→东城）；地级市粒度稳定且与天气数据粒度一致。name 仅作兜底。
+      const first = body.location?.[0];
+      const city = first?.adm2 ?? first?.name ?? '';
+      this.cityCache.set(key, { city, at: Date.now() });
+      return city;
+    } catch (e) {
+      // 城市名失败不影响天气：记日志、返回空串（前端隐去城市名）
+      this.logger.warn(`反查城市名失败，城市名将留空：${String(e)}`);
+      return cached?.city ?? '';
+    }
   }
 
   /**

@@ -69,12 +69,22 @@ export const RecommendWeatherSchema = z.object({
   temp: z.number(),
   /** 体感温度 ℃ */
   feels: z.number(),
-  /** 紫外线等级描述，如「强」 */
+  /** 紫外线等级描述，如「强」；now 接口不含，本期恒为空串 */
   uv: z.string(),
-  /** 降水概率 0~1 */
+  /** 降水概率 0~1（now 无概率字段，用有无降水近似 0/1，供推荐 prompt） */
   rain: z.number().min(0).max(1),
   /** 天气描述，如「多云转晴」 */
   desc: z.string(),
+  /** 城市名（GeoAPI 反查）；取不到为空 */
+  city: z.string().optional(),
+  /** 相对湿度 %（now.humidity）；取不到为空 */
+  humidity: z.number().optional(),
+  /** 风向，如「东南风」（now.windDir）；取不到为空 */
+  windDir: z.string().optional(),
+  /** 风力等级，如「2」（now.windScale）；取不到为空 */
+  windScale: z.string().optional(),
+  /** 实测降水量 mm（now.precip）；用于前端合理展示，取不到为空 */
+  precip: z.number().optional(),
 });
 export type RecommendWeather = z.infer<typeof RecommendWeatherSchema>;
 

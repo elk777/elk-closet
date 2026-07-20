@@ -37,21 +37,34 @@
       </view>
     </view>
 
-    <!-- 天气卡：有天气出实况，无天气（未配置/未授权定位）出中性占位 -->
+    <!-- 天气卡：有天气出实况（左栏温度/城市/体感，右栏湿度/风力/降水），
+         无天气（未配置/未授权定位）出中性占位 -->
     <view class="weather">
-      <view v-if="rec?.weather" class="weather__main">
-        <text class="weather__temp">{{ Math.round(rec.weather.temp) }}°</text>
-        <view class="weather__meta">
-          <text class="weather__desc">{{ rec.weather.desc }}</text>
+      <template v-if="rec?.weather">
+        <view class="weather__left">
+          <text class="weather__temp">{{ Math.round(rec.weather.temp) }}°</text>
+          <text class="weather__loc">
+            <text v-if="rec.weather.city">{{ rec.weather.city }} · </text>{{ rec.weather.desc }}
+          </text>
           <text class="weather__feels">体感 {{ Math.round(rec.weather.feels) }}°</text>
         </view>
-      </view>
-      <view v-else class="weather__main">
-        <text class="weather__temp">—°</text>
-        <text class="weather__desc">天气按季节估算</text>
-      </view>
-      <text v-if="rec?.weather" class="weather__hint">已按今日天气为你挑衣</text>
-      <text v-else class="weather__hint">开启定位后可按实时天气推荐</text>
+        <view class="weather__right">
+          <text v-if="rec.weather.humidity != null" class="weather__item">
+            湿度 {{ rec.weather.humidity }}%
+          </text>
+          <text v-if="rec.weather.windDir" class="weather__item">
+            {{ rec.weather.windDir }}{{ rec.weather.windScale ? ` ${rec.weather.windScale} 级` : '' }}
+          </text>
+          <text class="weather__item">{{ rainText }}</text>
+        </view>
+      </template>
+      <template v-else>
+        <view class="weather__left">
+          <text class="weather__temp">—°</text>
+          <text class="weather__loc">天气按季节估算</text>
+          <text class="weather__feels">开启定位后可按实时天气推荐</text>
+        </view>
+      </template>
     </view>
 
     <view class="sec-title">
@@ -176,6 +189,16 @@ const progress = computed(() => {
   if (!rec.value) return 0;
   const { garmentCount, unlockThreshold } = rec.value;
   return Math.min(100, Math.round((garmentCount / unlockThreshold) * 100));
+});
+
+/**
+ * 降水展示文案：now 接口只给降水量（mm），无概率。
+ * 有降水量则显示具体毫米数，否则显示「无降水」——按和风实际返回合理展示，不编造概率。
+ */
+const rainText = computed(() => {
+  const precip = rec.value?.weather?.precip;
+  if (precip == null) return '无降水';
+  return precip > 0 ? `降水 ${precip}mm` : '无降水';
 });
 
 /**
@@ -310,39 +333,44 @@ function goCheckIn(items: { id: string }[]) {
   color: $zy-ink-3;
 }
 .weather {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
   background: $zy-accent;
   border-radius: $zy-radius;
-  padding: 24px 20px;
+  padding: 22px 20px;
   color: #fff;
 }
-.weather__main {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-}
-.weather__temp {
-  font-size: 40px;
-  font-weight: 700;
-  color: #fff;
-}
-.weather__meta {
+.weather__left {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
-.weather__desc {
+.weather__temp {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #fff;
+}
+.weather__loc {
   font-size: 15px;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(255, 255, 255, 0.92);
 }
 .weather__feels {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.7);
 }
-.weather__hint {
-  display: block;
-  margin-top: 10px;
+.weather__right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+}
+.weather__item {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.8);
 }
 .sec-title {
   display: flex;
