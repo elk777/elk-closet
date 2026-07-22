@@ -3,7 +3,8 @@
  *
  * 核心原则：契约由我们定死，模型是可替换执行者。
  * 业务层只依赖此接口，不关心背后是 Anthropic 还是 OpenAI 协议——
- * 换模型 / 换协议只改 AI_PROVIDER 配置与对应实现，上层与数据库不动。
+ * 换模型只改对应能力路由（AI_ROUTE_*），加渠道只加渠道表（AI_CHANNEL_*），
+ * 上层与数据库不动。
  */
 
 import type {
@@ -13,8 +14,24 @@ import type {
   RecommendOutput,
 } from '@zhiyi/shared';
 
-/** 注入 AiProvider 实现的 DI token */
-export const AI_PROVIDER = Symbol('AI_PROVIDER');
+/**
+ * 渠道注册表的 DI token。
+ *
+ * 注入类型为 `Map<渠道名, AiProvider>`：启动时按渠道表逐条 new 出 Provider 实例。
+ * 上层 AiService 按能力路由取对应渠道的 Provider，并把该能力的 model 作为调用入参传入。
+ */
+export const AI_CHANNELS = Symbol('AI_CHANNELS');
+
+/**
+ * Provider 构造参数：一个渠道的 client 连接参数。
+ *
+ * 不含 model——Provider 按渠道建一个可复用的 client，model 由各能力调用时传入。
+ */
+export interface AiClientOptions {
+  baseUrl?: string;
+  apiKey: string;
+  timeoutMs: number;
+}
 
 /** 识别入参：一张衣物图 */
 export interface RecognizeInput {
@@ -56,9 +73,10 @@ export interface AiProvider {
    * - 非法枚举归「其他」，解析失败重试 1 次后仍失败则抛错
    *
    * @param input 待识别的衣物图
+   * @param model 本次调用使用的模型名（由能力路由传入，Provider 不再焊死单一 model）
    * @returns 已过 Zod 校验的结构化识别结果
    */
-  recognize(input: RecognizeInput): Promise<RecognitionResult>;
+  recognize(input: RecognizeInput, model: string): Promise<RecognitionResult>;
 
   /**
    * 生成搭配推荐（PRD 4.5「私人造型师」）。
@@ -70,9 +88,10 @@ export interface AiProvider {
    * - 解析失败重试 1 次后仍失败则抛错
    *
    * @param input 推荐输入契约（衣橱摘要 / 天气 / 偏好）
+   * @param model 本次调用使用的模型名（由能力路由传入）
    * @returns 已过 Zod 校验的推荐结果
    */
-  recommend(input: RecommendInput): Promise<RecommendOutput>;
+  recommend(input: RecommendInput, model: string): Promise<RecommendOutput>;
 
   /**
    * 预猜打卡照里穿了衣橱哪几件（PRD 4.7 系统预猜）。
@@ -84,7 +103,11 @@ export interface AiProvider {
    * - 尽力而为：解析失败重试 1 次后仍失败则抛错，上层降级为「空预选，用户手动选」
    *
    * @param input 打卡照 + 候选衣橱清单
+   * @param model 本次调用使用的模型名（由能力路由传入）
    * @returns 已过 Zod 校验的预猜结果（命中的衣物 id）
    */
-  guessOutfitItems(input: GuessOutfitInput): Promise<GuessOutfitResult>;
+  guessOutfitItems(
+    input: GuessOutfitInput,
+    model: string,
+  ): Promise<GuessOutfitResult>;
 }

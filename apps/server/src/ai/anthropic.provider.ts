@@ -7,16 +7,15 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import type {
   GuessOutfitResult,
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
 } from '@zhiyi/shared';
-import type { AiConfig } from '../config/configuration';
 import type {
+  AiClientOptions,
   AiProvider,
   GuessOutfitInput,
   RecognizeInput,
@@ -37,25 +36,21 @@ import {
   parseGuessOutfit,
 } from './guess-outfit.prompt';
 
-@Injectable()
 export class AnthropicProvider implements AiProvider {
   private readonly logger = new Logger(AnthropicProvider.name);
   private readonly client: Anthropic;
-  private readonly model: string;
 
-  constructor(config: ConfigService) {
-    const ai = config.get<AiConfig>('ai')!;
-    this.model = ai.anthropic.model;
+  constructor(options: AiClientOptions) {
     this.client = new Anthropic({
-      apiKey: ai.anthropic.apiKey,
+      apiKey: options.apiKey,
       // 显式置空 authToken：SDK 默认会读环境变量 ANTHROPIC_AUTH_TOKEN，
       // 自动附加 `Authorization: Bearer` 头。开发机若装了 Claude Code
       // 等工具会注入该变量，导致本请求同时带上「我们的 x-api-key」与
       // 「别处的 Bearer token」，网关优先认后者 → 401 → 推荐静默降级为 empty。
       // 只走 x-api-key 单一鉴权，杜绝环境变量串味。
       authToken: null,
-      baseURL: ai.anthropic.baseUrl,
-      timeout: ai.timeoutMs,
+      baseURL: options.baseUrl,
+      timeout: options.timeoutMs,
     });
   }
 
@@ -99,14 +94,20 @@ export class AnthropicProvider implements AiProvider {
     return textBlock.text;
   }
 
-  async recognize(input: RecognizeInput): Promise<RecognitionResult> {
-    const raw = await this.callModel(input.imageUrl);
+  async recognize(
+    input: RecognizeInput,
+    model: string,
+  ): Promise<RecognitionResult> {
+    const raw = await this.callModel(input.imageUrl, model);
     return parseRecognition(raw);
   }
 
-  async recommend(input: RecommendInput): Promise<RecommendOutput> {
+  async recommend(
+    input: RecommendInput,
+    model: string,
+  ): Promise<RecommendOutput> {
     const message = await this.client.messages.create({
-      model: this.model,
+      model,
       // 推荐是结构化 JSON 任务，无需模型长篇推理。关掉 thinking：
       // 推理型模型（如 mimo）默认会先输出大段思考再出正文，实测单次耗时
       // 从 ~26s 降到 ~3.5s，是今日推荐超时的主因。关思考后正文很短，
@@ -124,6 +125,7 @@ export class AnthropicProvider implements AiProvider {
 
   async guessOutfitItems(
     input: GuessOutfitInput,
+    model: string,
   ): Promise<GuessOutfitResult> {
     // 多图内容块：打卡照在前，其后每个候选「先文本标注 id/简述，再贴图」，
     // 让模型能把视觉命中对应回具体 id。
@@ -138,7 +140,7 @@ export class AnthropicProvider implements AiProvider {
     }
 
     const message = await this.client.messages.create({
-      model: this.model,
+      model,
       max_tokens: 1024,
       system: GUESS_OUTFIT_SYSTEM_PROMPT,
       messages: [{ role: 'user', content }],
@@ -150,11 +152,12 @@ export class AnthropicProvider implements AiProvider {
   /**
    * 调用 Anthropic messages 接口做 vision 识别。
    * @param imageUrl 衣物图 URL（走 image 块的 url 源）
+   * @param model 使用的模型名
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
-  private async callModel(imageUrl: string): Promise<string> {
+  private async callModel(imageUrl: string, model: string): Promise<string> {
     const message = await this.client.messages.create({
-      model: this.model,
+      model,
       max_tokens: 1024,
       system: RECOGNITION_SYSTEM_PROMPT,
       messages: [

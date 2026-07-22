@@ -6,8 +6,6 @@
  * 开 response_format=json_object 让模型只吐 JSON，返回文本过共用 parseRecognition。
  */
 
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import type {
   GuessOutfitResult,
@@ -15,8 +13,8 @@ import type {
   RecommendInput,
   RecommendOutput,
 } from '@zhiyi/shared';
-import type { AiConfig } from '../config/configuration';
 import type {
+  AiClientOptions,
   AiProvider,
   GuessOutfitInput,
   RecognizeInput,
@@ -37,29 +35,31 @@ import {
   parseGuessOutfit,
 } from './guess-outfit.prompt';
 
-@Injectable()
 export class OpenAiProvider implements AiProvider {
   private readonly client: OpenAI;
-  private readonly model: string;
 
-  constructor(config: ConfigService) {
-    const ai = config.get<AiConfig>('ai')!;
-    this.model = ai.openai.model;
+  constructor(options: AiClientOptions) {
     this.client = new OpenAI({
-      apiKey: ai.openai.apiKey,
-      baseURL: ai.openai.baseUrl,
-      timeout: ai.timeoutMs,
+      apiKey: options.apiKey,
+      baseURL: options.baseUrl,
+      timeout: options.timeoutMs,
     });
   }
 
-  async recognize(input: RecognizeInput): Promise<RecognitionResult> {
-    const raw = await this.callModel(input.imageUrl);
+  async recognize(
+    input: RecognizeInput,
+    model: string,
+  ): Promise<RecognitionResult> {
+    const raw = await this.callModel(input.imageUrl, model);
     return parseRecognition(raw);
   }
 
-  async recommend(input: RecommendInput): Promise<RecommendOutput> {
+  async recommend(
+    input: RecommendInput,
+    model: string,
+  ): Promise<RecommendOutput> {
     const completion = await this.client.chat.completions.create({
-      model: this.model,
+      model,
       // 推理模型的思考过程与正文共用预算，给足以免 JSON 被截断（Unterminated）
       max_tokens: 4000,
       // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
@@ -79,6 +79,7 @@ export class OpenAiProvider implements AiProvider {
 
   async guessOutfitItems(
     input: GuessOutfitInput,
+    model: string,
   ): Promise<GuessOutfitResult> {
     // 多图内容块：打卡照在前，其后每个候选「先文本标注 id/简述，再贴图」，
     // 让模型能把视觉命中对应回具体 id。
@@ -93,7 +94,7 @@ export class OpenAiProvider implements AiProvider {
     }
 
     const completion = await this.client.chat.completions.create({
-      model: this.model,
+      model,
       max_tokens: 1024,
       response_format: { type: 'json_object' },
       messages: [
@@ -112,11 +113,12 @@ export class OpenAiProvider implements AiProvider {
   /**
    * 调用 OpenAI chat.completions 做 vision 识别。
    * @param imageUrl 衣物图 URL（走 image_url 内容块）
+   * @param model 使用的模型名
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
-  private async callModel(imageUrl: string): Promise<string> {
+  private async callModel(imageUrl: string, model: string): Promise<string> {
     const completion = await this.client.chat.completions.create({
-      model: this.model,
+      model,
       max_tokens: 1024,
       // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
       response_format: { type: 'json_object' },

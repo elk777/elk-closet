@@ -8,11 +8,6 @@
 
 import { z } from 'zod';
 
-/** 布尔型环境变量：接受 '1'/'true'/'0'/'false'，转成 boolean */
-const boolFromEnv = z
-  .enum(['true', 'false', '1', '0'])
-  .transform((v) => v === 'true' || v === '1');
-
 /** 端口号：字符串 → 数字，校验范围 */
 const port = z.coerce.number().int().min(1).max(65535);
 
@@ -43,21 +38,10 @@ export const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().min(1).default('30d'),
 
   // ── AI ──
-  AI_PROVIDER: z.enum(['anthropic', 'openai']).default('anthropic'),
-  AI_ANTHROPIC_BASE_URL: z.string().url().optional(),
-  AI_ANTHROPIC_API_KEY: z.string().optional().default(''),
-  AI_ANTHROPIC_MODEL: z.string().min(1).default('claude-sonnet-4-6'),
-  AI_OPENAI_BASE_URL: z.string().url().optional(),
-  AI_OPENAI_API_KEY: z.string().optional().default(''),
-  AI_OPENAI_MODEL: z.string().min(1).default('gpt-4o'),
+  // 渠道表（AI_CHANNEL_*__*）与能力路由（AI_ROUTE_*__*）是动态前缀，
+  // 固定 key 的 z.object 覆盖不了，改由下方 validateAiConfig 单独校验。
+  // 这里只校验全局超时。
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30000),
-  // 是否启用视觉能力（识别 / 打卡预猜靠 image 块）。当前模型（mimo）纯文本，
-  // 传图必 404，故默认关闭：关闭时这两个能力直接走降级，不再空调必失败的接口。
-  // 将来换上支持 vision 的模型再置 true 即可复活，无需改代码。
-  AI_VISION_ENABLED: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((v) => v === 'true'),
 
   // ── 又拍云 ──
   UPYUN_BUCKET: z.string().min(1),
@@ -79,6 +63,77 @@ export const envSchema = z.object({
 /** 校验后的环境变量类型（全部字段已带默认值 / 转换） */
 export type Env = z.infer<typeof envSchema>;
 
+/** 合法协议集合，与 configuration.ts 的 AiProtocol 保持一致 */
+const AI_PROTOCOLS = ['anthropic', 'openai'] as const;
+/** 必须齐全的能力路由，与 configuration.ts 的 AiAbility 保持一致 */
+const AI_ABILITIES = ['RECOGNIZE', 'RECOMMEND', 'GUESS'] as const;
+
+/**
+ * 校验 AI 渠道表 + 能力路由（fail-fast，随 validateEnv 一起跑）。
+ *
+ * 渠道名由用户自定（AI_CHANNEL_<名字>__字段），是动态前缀，无法用固定 key 的
+ * zod schema 覆盖，故单独在此对原始 env 做交叉校验：
+ * 1. 至少 1 个渠道，每个渠道协议合法、密钥非空（忘配密钥启动即失败）；
+ * 2. 三条能力路由齐全，各含 channel/model；
+ * 3. 路由引用的 channel 必须存在于渠道表（核心防呆）。
+ *
+ * @param raw process.env 原始对象
+ * @returns 错误信息数组（空数组表示通过）
+ */
+function validateAiConfig(raw: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+
+  // ── 聚合渠道表 ──
+  const channelReg = /^AI_CHANNEL_(.+?)__(PROTOCOL|BASE_URL|API_KEY)$/;
+  const channels: Record<
+    string,
+    { protocol?: string; apiKey?: string }
+  > = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const m = channelReg.exec(key);
+    if (!m) continue;
+    const name = m[1].toLowerCase();
+    const ch = (channels[name] ??= {});
+    if (m[2] === 'PROTOCOL') ch.protocol = String(value ?? '');
+    else if (m[2] === 'API_KEY') ch.apiKey = String(value ?? '');
+  }
+
+  const channelNames = Object.keys(channels);
+  if (channelNames.length === 0) {
+    errors.push('AI 渠道表为空：至少配置一个 AI_CHANNEL_<名字>__PROTOCOL/API_KEY');
+  }
+  for (const [name, ch] of Object.entries(channels)) {
+    if (!ch.protocol || !AI_PROTOCOLS.includes(ch.protocol as never)) {
+      errors.push(
+        `AI_CHANNEL_${name.toUpperCase()}__PROTOCOL 非法：需为 anthropic | openai，当前「${ch.protocol ?? ''}」`,
+      );
+    }
+    if (!ch.apiKey) {
+      errors.push(`AI_CHANNEL_${name.toUpperCase()}__API_KEY 不能为空`);
+    }
+  }
+
+  // ── 校验能力路由 ──
+  for (const ability of AI_ABILITIES) {
+    const channel = String(raw[`AI_ROUTE_${ability}__CHANNEL`] ?? '')
+      .trim()
+      .toLowerCase();
+    const model = String(raw[`AI_ROUTE_${ability}__MODEL`] ?? '').trim();
+    if (!channel) {
+      errors.push(`AI_ROUTE_${ability}__CHANNEL 不能为空`);
+    } else if (!channelNames.includes(channel)) {
+      errors.push(
+        `AI_ROUTE_${ability}__CHANNEL 引用了不存在的渠道「${channel}」，可用渠道：${channelNames.join(', ') || '（无）'}`,
+      );
+    }
+    if (!model) {
+      errors.push(`AI_ROUTE_${ability}__MODEL 不能为空`);
+    }
+  }
+
+  return errors;
+}
+
 /**
  * 供 @nestjs/config 的 validate 钩子调用。
  * @param raw process.env 原始对象
@@ -86,11 +141,15 @@ export type Env = z.infer<typeof envSchema>;
  */
 export function validateEnv(raw: Record<string, unknown>): Env {
   const parsed = envSchema.safeParse(raw);
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
-      .join('\n');
-    throw new Error(`环境变量校验失败：\n${issues}`);
+  const aiErrors = validateAiConfig(raw);
+  if (!parsed.success || aiErrors.length > 0) {
+    const zodIssues = parsed.success
+      ? []
+      : parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`);
+    const aiIssues = aiErrors.map((e) => `  - ${e}`);
+    throw new Error(
+      `环境变量校验失败：\n${[...zodIssues, ...aiIssues].join('\n')}`,
+    );
   }
   return parsed.data;
 }
