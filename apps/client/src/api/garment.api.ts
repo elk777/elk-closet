@@ -24,11 +24,21 @@ export interface CreateGarmentPayload {
 }
 
 /**
+ * 识别接口响应：后端不抛 500，用 recognized 标记成败。
+ * - recognized=true 时带 result（完整识别属性）
+ * - recognized=false 时仅带 message，前端走「先存图后补」
+ */
+export type RecognizeResponse =
+  | { recognized: true; result: RecognitionResult }
+  | { recognized: false; message: string };
+
+/**
  * AI 识别衣物属性（不入库）。
  * @param imageUrl 又拍云图 URL
+ * @returns 识别响应信封（成败由 recognized 标记，见 RecognizeResponse）
  */
 export function recognizeGarment(imageUrl: string) {
-  return http.post<RecognitionResult>('/garments/recognize', { imageUrl });
+  return http.post<RecognizeResponse>('/garments/recognize', { imageUrl });
 }
 
 /** 创建衣物 */

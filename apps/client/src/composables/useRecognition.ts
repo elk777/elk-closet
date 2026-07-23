@@ -27,12 +27,15 @@ export function useRecognition() {
     recognizing.value = true;
     lowConfidence.value = false;
     try {
-      const result = await recognizeGarment(imageUrl);
+      const res = await recognizeGarment(imageUrl);
+      // 后端识别失败不抛错，用 recognized 标记：false 时走「先存图后补」
+      if (!res.recognized) return null;
+      const result = res.result;
       lowConfidence.value =
         result.confidence < RECOGNITION_CONFIDENCE_THRESHOLD;
       return result;
     } catch (e) {
-      // 识别失败静默兜底：不弹错误，返回 null 让页面走「先存图后补」
+      // 网络异常等静默兜底：不弹错误，返回 null 让页面走「先存图后补」
       return null;
     } finally {
       recognizing.value = false;
