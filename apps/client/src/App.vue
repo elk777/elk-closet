@@ -22,5 +22,5 @@ onLaunch(async () => {
 
 <style lang="scss">
 /* 全局基础样式：页面背景、字体、通用容器 */
-@import './styles/base.scss';
+@use './styles/base.scss';
 </style>

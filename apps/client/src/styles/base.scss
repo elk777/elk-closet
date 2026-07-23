@@ -3,7 +3,7 @@
  * 在 App.vue 全局引入一次即可。
  */
 
-@import './tokens.scss';
+@use './tokens.scss' as *;
 
 page {
   background: $zy-bg;
