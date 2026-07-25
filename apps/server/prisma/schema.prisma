@@ -37,6 +37,8 @@ model User {
   nickname  String?
   /// 头像 URL：用户主动授权后才有
   avatarUrl String?  @map("avatar_url")
+  /// 全身照 URL：AI 试穿的底图，只传一次、复用（PRD 4.6）；敏感，存 body 目录
+  bodyPhotoUrl String? @map("body_photo_url")
   /// 衣柜名称，默认「我的衣橱」
   closetName String  @default("我的衣橱") @map("closet_name")
   createdAt DateTime @default(now()) @map("created_at")
