@@ -30,6 +30,7 @@ import { OpenAiProvider } from './openai.provider';
             baseUrl: ch.baseUrl,
             apiKey: ch.apiKey,
             timeoutMs: ai.timeoutMs,
+            proxyUrl: ch.proxyUrl,
           };
           channels.set(
             name,

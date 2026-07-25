@@ -66,7 +66,7 @@ export type Env = z.infer<typeof envSchema>;
 /** 合法协议集合，与 configuration.ts 的 AiProtocol 保持一致 */
 const AI_PROTOCOLS = ['anthropic', 'openai'] as const;
 /** 必须齐全的能力路由，与 configuration.ts 的 AiAbility 保持一致 */
-const AI_ABILITIES = ['RECOGNIZE', 'RECOMMEND', 'GUESS'] as const;
+const AI_ABILITIES = ['RECOGNIZE', 'RECOMMEND', 'GUESS', 'TRYON'] as const;
 
 /**
  * 校验 AI 渠道表 + 能力路由（fail-fast，随 validateEnv 一起跑）。

@@ -12,6 +12,8 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  TryOnInput,
+  TryOnResult,
 } from '@zhiyi/shared';
 
 /**
@@ -31,6 +33,11 @@ export interface AiClientOptions {
   baseUrl?: string;
   apiKey: string;
   timeoutMs: number;
+  /**
+   * 可选 HTTP(S) 代理 URL（如 http://127.0.0.1:7890）。
+   * 仅本机开发连需代理的中转站时用，生产直连留空——配了则给 SDK 挂 undici ProxyAgent。
+   */
+  proxyUrl?: string;
 }
 
 /** 识别入参：一张衣物图 */
@@ -60,8 +67,9 @@ export interface GuessOutfitInput {
 /**
  * AI 能力接口。
  *
- * 识别（录入生命线）+ 推荐（今日推荐，PRD 4.5）；tryOn 后续模块再加，
- * 届时各 Provider 实现补齐即可，接口保持稳定。
+ * 识别（录入生命线）+ 推荐（今日推荐，PRD 4.5）+ 预猜（PRD 4.7）+ 试穿（PRD 4.6）。
+ * 试穿是图像生成能力，仅支持图像编辑的协议（openai / gpt-image）能实现；
+ * 不支持的协议实现里显式抛错，接口保持完整。
  */
 export interface AiProvider {
   /**
@@ -110,4 +118,19 @@ export interface AiProvider {
     input: GuessOutfitInput,
     model: string,
   ): Promise<GuessOutfitResult>;
+
+  /**
+   * AI 试穿：把整套单品合成到用户全身照上（PRD 4.6「整套一次上身」）。
+   *
+   * 实现约定：
+   * - 图像编辑能力：全身照作底图 + 各单品图 + 指令，一次合成上身效果
+   * - 返回合成图的 base64（由上层落对象存储后回填 URL，Provider 不碰存储）
+   * - 图像生成不稳定，失败/超时的重试与降级由上层 AiService 处理
+   * - 不支持图像编辑的协议（如 anthropic）实现里显式抛错
+   *
+   * @param input 全身照 + 本套单品图（含简述）+ 可选场合/风格
+   * @param model 本次调用使用的模型名（由能力路由传入，如 gpt-image-2）
+   * @returns 合成上身图的 base64（不含 data: 前缀）
+   */
+  tryOn(input: TryOnInput, model: string): Promise<string>;
 }

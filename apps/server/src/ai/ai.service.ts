@@ -20,6 +20,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  TryOnInput,
 } from '@zhiyi/shared';
 import type { AiConfig, AiRouteConfig } from '../config/configuration';
 import {
@@ -43,6 +44,15 @@ export class RecommendFailedError extends Error {
   constructor(cause: unknown) {
     super('AI 推荐失败');
     this.name = 'RecommendFailedError';
+    this.cause = cause;
+  }
+}
+
+/** 试穿整体失败（含重试）后抛出，供上层降级为「生成失败，稍后再试」 */
+export class TryOnFailedError extends Error {
+  constructor(cause: unknown) {
+    super('AI 试穿失败');
+    this.name = 'TryOnFailedError';
     this.cause = cause;
   }
 }
@@ -156,6 +166,31 @@ export class AiService {
         // 尽力而为：仍失败则空命中降级，不抛错阻塞打卡
         this.logger.warn(`预猜重试仍失败，降级为手动选：${String(second)}`);
         return { itemIds: [] };
+      }
+    }
+  }
+
+  /**
+   * AI 试穿：把整套单品合成到用户全身照上，失败自动重试 1 次（PRD 4.6）。
+   *
+   * 图像生成不稳定（超时/内容策略拒绝/网关抖动），重试后仍失败则抛错，
+   * 上层降级为「试穿失败，请稍后再试」，不阻塞其他功能。
+   * @param input 全身照 + 本套单品图 + 可选场合/风格
+   * @returns 合成上身图的 base64（不含 data: 前缀）
+   * @throws TryOnFailedError 重试后仍失败
+   */
+  async tryOn(input: TryOnInput): Promise<string> {
+    const route = this.routes.tryon;
+    const provider = this.providerOf(route);
+    try {
+      return await provider.tryOn(input, route.model);
+    } catch (first) {
+      this.logger.warn(`试穿失败，重试一次：${String(first)}`);
+      try {
+        return await provider.tryOn(input, route.model);
+      } catch (second) {
+        this.logger.error(`试穿重试仍失败：${String(second)}`);
+        throw new TryOnFailedError(second);
       }
     }
   }

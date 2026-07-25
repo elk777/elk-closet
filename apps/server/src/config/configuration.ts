@@ -50,6 +50,12 @@ export interface AiChannelConfig {
   protocol: AiProtocol;
   baseUrl?: string;
   apiKey: string;
+  /**
+   * 出站代理 URL（可选）。配了则该渠道的所有请求走此代理，否则直连。
+   * 用途：图像渠道等第三方站点在本机开发需经代理才可达（如 http://127.0.0.1:7890），
+   * 生产环境后端多为直连，留空即可。渠道自描述连接参数，任何渠道都能按需挂代理。
+   */
+  proxyUrl?: string;
 }
 
 /**
@@ -65,8 +71,8 @@ export interface AiRouteConfig {
   vision: boolean;
 }
 
-/** 可路由的 AI 能力名（tryon 预留，本次不实现能力本体） */
-export type AiAbility = 'recognize' | 'recommend' | 'guess';
+/** 可路由的 AI 能力名 */
+export type AiAbility = 'recognize' | 'recommend' | 'guess' | 'tryon';
 
 /**
  * AI 总配置：渠道表 + 能力路由 + 全局超时。
@@ -151,13 +157,15 @@ export const jwtConfig = registerAs(
 export const aiConfig = registerAs('ai', (): AiConfig => {
   const channels: Record<string, AiChannelConfig> = {};
   // 渠道字段名 → AiChannelConfig 属性名
-  const channelReg = /^AI_CHANNEL_(.+?)__(PROTOCOL|BASE_URL|API_KEY)$/;
-  const routeReg = /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS)__(CHANNEL|MODEL|VISION)$/;
+  const channelReg = /^AI_CHANNEL_(.+?)__(PROTOCOL|BASE_URL|API_KEY|PROXY)$/;
+  const routeReg =
+    /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS|TRYON)__(CHANNEL|MODEL|VISION)$/;
 
   const routes: Record<AiAbility, AiRouteConfig> = {
     recognize: { channel: '', model: '', vision: false },
     recommend: { channel: '', model: '', vision: false },
     guess: { channel: '', model: '', vision: false },
+    tryon: { channel: '', model: '', vision: false },
   };
 
   for (const [key, rawValue] of Object.entries(process.env)) {
@@ -174,6 +182,7 @@ export const aiConfig = registerAs('ai', (): AiConfig => {
       if (field === 'PROTOCOL') ch.protocol = value as AiProtocol;
       else if (field === 'BASE_URL') ch.baseUrl = value || undefined;
       else if (field === 'API_KEY') ch.apiKey = value;
+      else if (field === 'PROXY') ch.proxyUrl = value || undefined;
       continue;
     }
 

@@ -13,6 +13,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  TryOnInput,
 } from '@zhiyi/shared';
 import type {
   AiClientOptions,
@@ -147,6 +148,19 @@ export class AnthropicProvider implements AiProvider {
     });
 
     return parseGuessOutfit(this.extractText(message));
+  }
+
+  /**
+   * 试穿：Anthropic 协议无图像编辑能力，显式抛错。
+   *
+   * 保留此实现只为满足 AiProvider 接口完整——试穿必须路由到支持图像编辑的
+   * 渠道（如 OpenAI 协议下的 gpt-image-2）。误配到本渠道时启动虽能通过，
+   * 调用即抛错，由上层降级为「试穿生成失败」，不静默出错图。
+   */
+  tryOn(): Promise<string> {
+    return Promise.reject(
+      new Error('Anthropic 协议不支持图像编辑，试穿请路由到图像生成渠道'),
+    );
   }
 
   /**
