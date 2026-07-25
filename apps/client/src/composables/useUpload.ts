@@ -6,6 +6,7 @@
  */
 
 import { ref } from 'vue';
+import type { UploadResourceType } from '@zhiyi/shared';
 import { signUpload, type UpyunSignResult } from '../api/upload.api';
 import { useToast } from './useToast';
 
@@ -15,9 +16,12 @@ export function useUpload() {
 
   /**
    * 选一张图并直传又拍云。
+   * @param resourceType 资源类型（缺省衣物图；全身照传 body、试穿图传 tryon 等）
    * @returns 成功返回 { imageUrl }；用户取消或失败返回 null
    */
-  async function chooseAndUpload(): Promise<{ imageUrl: string } | null> {
+  async function chooseAndUpload(
+    resourceType?: UploadResourceType,
+  ): Promise<{ imageUrl: string } | null> {
     const [file] = await chooseImage();
     if (!file) return null;
 
@@ -25,7 +29,7 @@ export function useUpload() {
     progress.value = 0;
     try {
       const ext = extractExt(file.path);
-      const sign = await signUpload(ext);
+      const sign = await signUpload(ext, resourceType);
       await uploadToUpyun(sign, file.path, (p) => (progress.value = p));
       return { imageUrl: sign.imageUrl };
     } catch (e) {

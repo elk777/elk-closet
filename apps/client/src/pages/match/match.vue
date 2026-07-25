@@ -125,7 +125,7 @@
         <text class="outfit__reason">{{ o.reason }}</text>
 
         <view class="outfit__actions">
-          <view class="act act--ghost" @click="onTryOn">
+          <view class="act act--ghost" @click="onTryOn(o.items)">
             <text>试穿看</text>
           </view>
           <view class="act act--solid" @click="goCheckIn(o.items)">
@@ -148,6 +148,49 @@
         <text>再试一次</text>
       </view>
     </view>
+
+    <!-- 试穿看：结果 / 生成中 / 首次引导传全身照，同一弹层三态 -->
+    <AppSheet :visible="tryOnVisible" @close="closeTryOn">
+      <!-- 首次：还没传全身照，先引导（含隐私提示） -->
+      <view v-if="tryOnStep === 'need_body'" class="tryon">
+        <text class="tryon__title">先上传一张全身照</text>
+        <text class="tryon__tip">
+          用来把这套穿到你身上看效果。照片只存你自己的衣橱，不公开、不用于训练，可随时删除。
+        </text>
+        <view class="tryon__cta" @click="uploadBody">
+          <text>{{ uploading ? '上传中…' : '拍照 / 从相册选' }}</text>
+        </view>
+      </view>
+
+      <!-- 生成中 -->
+      <view v-else-if="tryOnStep === 'loading'" class="tryon">
+        <AppLoading text="正在把这套穿到你身上…" />
+        <text class="tryon__tip">预览效果 · 仅供参考</text>
+      </view>
+
+      <!-- 出图 -->
+      <view v-else-if="tryOnStep === 'ok'" class="tryon">
+        <image class="tryon__img" :src="tryOnImage" mode="widthFix" />
+        <text class="tryon__tip">预览效果 · 仅供参考</text>
+        <view class="tryon__actions">
+          <view class="act act--ghost" @click="closeTryOn">
+            <text>关闭</text>
+          </view>
+          <view class="act act--solid" @click="saveTryOnAsCheckIn">
+            <text>存为今日穿搭</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 失败 -->
+      <view v-else class="tryon">
+        <text class="tryon__title">试穿生成失败</text>
+        <text class="tryon__tip">图像生成偶尔会抽风，稍等片刻再试一次。</text>
+        <view class="tryon__cta" @click="retryTryOn">
+          <text>再试一次</text>
+        </view>
+      </view>
+    </AppSheet>
   </view>
 </template>
 
@@ -163,8 +206,12 @@ import {
   type Season,
 } from '@zhiyi/shared';
 import AppLoading from '../../components/base/AppLoading.vue';
+import AppSheet from '../../components/base/AppSheet.vue';
 import AppTag from '../../components/base/AppTag.vue';
 import { getMatchedOutfits } from '../../api/recommend.api';
+import { tryOnOutfit, saveBodyPhoto } from '../../api/tryon.api';
+import { useUpload } from '../../composables/useUpload';
+import { useToast } from '../../composables/useToast';
 import { useUserStore } from '../../store/user';
 
 const occasionOptions = OCCASION_OPTIONS;
@@ -179,6 +226,18 @@ const userStore = useUserStore();
 const occasion = ref<string>('');
 const style = ref<string>('');
 const season = ref<Season>(seasonOfMonth());
+
+// ── 试穿状态 ──
+const { uploading, chooseAndUpload } = useUpload();
+const toast = useToast();
+/** 试穿弹层是否可见 */
+const tryOnVisible = ref(false);
+/** 试穿弹层内四态：引导传全身照 / 生成中 / 出图 / 失败 */
+const tryOnStep = ref<'need_body' | 'loading' | 'ok' | 'failed'>('loading');
+/** 生成的上身图 URL */
+const tryOnImage = ref('');
+/** 当前正在试穿的这套单品 id（存为打卡时带走） */
+const tryOnItemIds = ref<string[]>([]);
 
 /**
  * 拉取智能搭配。任一维度变更即重新请求（AI 生成，带 loading）。
@@ -239,11 +298,73 @@ function goDetail(id: string) {
 }
 
 /**
- * 试穿看：AI 试穿（PRD 4.5「每套可试穿看」）依赖多模态模型，
- * 当前网关无 vision 能力，功能尚未开放，先给出明确提示而非虚构能力。
+ * 试穿看：把这套穿到用户全身照上（PRD 4.6「整套一次上身」）。
+ * 打开弹层并发起试穿；后端若返回 no_body 则弹层切到「引导传全身照」。
+ * @param items 该套搭配的完整单品
  */
-function onTryOn() {
-  uni.showToast({ title: 'AI 试穿即将开放', icon: 'none' });
+function onTryOn(items: { id: string }[]) {
+  tryOnItemIds.value = items.map((i) => i.id);
+  tryOnVisible.value = true;
+  runTryOn();
+}
+
+/** 发起试穿请求，按后端三态驱动弹层。 */
+async function runTryOn() {
+  tryOnStep.value = 'loading';
+  try {
+    const r = await tryOnOutfit({
+      itemIds: tryOnItemIds.value,
+      occasion: occasion.value || undefined,
+      style: style.value || undefined,
+    });
+    if (r.status === 'no_body') {
+      tryOnStep.value = 'need_body';
+    } else if (r.status === 'ok') {
+      tryOnImage.value = r.imageUrl;
+      tryOnStep.value = 'ok';
+    } else {
+      tryOnStep.value = 'failed';
+    }
+  } catch {
+    tryOnStep.value = 'failed';
+  }
+}
+
+/** 引导态里选图上传全身照，成功后自动接着试穿。 */
+async function uploadBody() {
+  if (uploading.value) return;
+  const uploaded = await chooseAndUpload('body');
+  if (!uploaded) return;
+  try {
+    await saveBodyPhoto(uploaded.imageUrl);
+  } catch {
+    toast.error('全身照保存失败，请重试');
+    return;
+  }
+  runTryOn();
+}
+
+/** 失败态重试。 */
+function retryTryOn() {
+  runTryOn();
+}
+
+/** 关闭试穿弹层并复位。 */
+function closeTryOn() {
+  tryOnVisible.value = false;
+  tryOnImage.value = '';
+}
+
+/**
+ * 把试穿这套存为今日穿搭：带单品 id 与来源 tryon 跳打卡页。
+ * 试穿图本身已在 tryon 目录，打卡照仍由用户在打卡页决定（保持日记「美照」语义）。
+ */
+function saveTryOnAsCheckIn() {
+  const itemIds = tryOnItemIds.value.join(',');
+  closeTryOn();
+  uni.navigateTo({
+    url: `/pages/diary/check-in?source=tryon&itemIds=${itemIds}`,
+  });
 }
 
 /**
@@ -456,5 +577,45 @@ function goCheckIn(items: { id: string }[]) {
   color: #fff;
   font-size: 15px;
   font-weight: 600;
+}
+
+/* ── 试穿弹层：四态共用容器 ── */
+.tryon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 4px;
+}
+.tryon__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: $zy-ink;
+}
+.tryon__tip {
+  font-size: 13px;
+  color: $zy-ink-2;
+  text-align: center;
+  line-height: 1.6;
+}
+.tryon__img {
+  width: 100%;
+  border-radius: $zy-radius-sm;
+  background: $zy-bg;
+}
+.tryon__cta {
+  margin-top: 4px;
+  padding: 13px 32px;
+  border-radius: 30px;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tryon__actions {
+  margin-top: 4px;
+  display: flex;
+  gap: 10px;
+  width: 100%;
 }
 </style>

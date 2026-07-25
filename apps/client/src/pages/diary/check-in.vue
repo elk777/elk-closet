@@ -141,7 +141,8 @@ function syncSelected() {
  */
 onLoad((query) => {
   const q = (query ?? {}) as { itemIds?: string; source?: string };
-  if (q.source === 'ai') source.value = 'ai';
+  // 来源限白名单：ai（推荐采纳）/ tryon（试穿转化）；其余保持默认 manual
+  if (q.source === 'ai' || q.source === 'tryon') source.value = q.source;
   if (q.itemIds) {
     const ids = q.itemIds.split(',').filter(Boolean);
     selected.value = new Set(ids);
