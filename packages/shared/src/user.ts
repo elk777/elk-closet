@@ -21,6 +21,8 @@ export interface User {
   avatarUrl: string | null;
   /** 衣柜名称，默认「我的衣橱」 */
   closetName: string;
+  /** 全身照 URL：AI 试穿复用（只传一次，PRD 4.6）；敏感、可空 */
+  bodyPhotoUrl: string | null;
   /** 创建时间（ISO 字符串） */
   createdAt: string;
   /** 最后活跃时间（ISO 字符串），用于留存分析 */

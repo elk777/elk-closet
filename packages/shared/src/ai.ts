@@ -256,3 +256,64 @@ export function seasonOfMonth(month?: number): Season {
   if (m >= 9 && m <= 11) return '秋';
   return '冬';
 }
+
+/* ============================================================
+   能力三：AI 试穿（整套一次上身，PRD 4.6）
+   ============================================================ */
+
+/**
+ * 试穿单品：喂给图像模型的一件衣服（图 + 简述）。
+ *
+ * 与推荐/预猜不同，试穿要「看图合成」，故必须传图 URL（非纯 id/属性）。
+ * brief 辅助模型理解这是什么单品（品类+主色），提升合成贴合度。
+ */
+export const TryOnItemSchema = z.object({
+  /** 单品图 URL（抠图优先、回退原图；由后端回填） */
+  imageUrl: z.string().min(1),
+  /** 一句话简述（品类+主色），辅助模型识别单品 */
+  brief: z.string().default(''),
+});
+export type TryOnItem = z.infer<typeof TryOnItemSchema>;
+
+/**
+ * 试穿输入契约（后端组装后传给 Provider）。
+ *
+ * 首版「整套一次上身」：一张全身照 + 该套全部单品图，模型一次合成上身效果。
+ * 逐件换留待后续（届时把 items 收敛为单件 + 传入「当前上身图」作底图即可，接口不破坏）。
+ */
+export const TryOnInputSchema = z.object({
+  /** 用户全身照 URL（只传一次、复用；PRD 4.6） */
+  bodyPhotoUrl: z.string().min(1),
+  /** 本套要穿上身的单品（含图） */
+  items: z.array(TryOnItemSchema).min(1),
+  /** 场合，作 prompt 软约束，可选 */
+  occasion: z.string().optional(),
+  /** 风格，作 prompt 软约束，可选 */
+  style: z.string().optional(),
+});
+export type TryOnInput = z.infer<typeof TryOnInputSchema>;
+
+/**
+ * 试穿输出契约。
+ *
+ * 图像模型返回二进制/base64，由后端落对象存储后回填 URL，前端只拿 URL 渲染。
+ */
+export const TryOnResultSchema = z.object({
+  /** 合成上身图 URL（后端存 tryon 目录后回填） */
+  imageUrl: z.string().min(1),
+});
+export type TryOnResult = z.infer<typeof TryOnResultSchema>;
+
+/**
+ * 试穿接口返回（后端 → 前端）。
+ *
+ * 三态一个结构表达，前端据 status 分支：
+ * - no_body：用户还没上传全身照，引导先传（含隐私提示）
+ * - ok：正常出上身图
+ * - failed：模型生成失败/超时，提示稍后再试（不阻塞其他功能）
+ */
+export interface TryOnResponse {
+  status: 'no_body' | 'ok' | 'failed';
+  /** 合成上身图 URL；no_body / failed 时为空 */
+  imageUrl: string;
+}
