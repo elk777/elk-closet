@@ -68,6 +68,12 @@
       </view>
     </view>
 
+    <!-- 自己挑一套：常驻入口，AI 搭不出/当季不足时也能手动组套试穿或打卡 -->
+    <view class="diy" @click="openPicker">
+      <text class="diy__t">自己挑一套</text>
+      <text class="diy__s">手动选几件，试穿看或存为打卡</text>
+    </view>
+
     <!-- 加载中 -->
     <view v-if="loading" class="state">
       <AppLoading text="正在为你搭配…" />
@@ -150,7 +156,7 @@
     </view>
 
     <!-- 试穿看：结果 / 生成中 / 首次引导传全身照，同一弹层三态 -->
-    <AppSheet :visible="tryOnVisible" @close="closeTryOn">
+    <AppSheet v-model="tryOnVisible" title="试穿看">
       <!-- 首次：还没传全身照，先引导（含隐私提示） -->
       <view v-if="tryOnStep === 'need_body'" class="tryon">
         <text class="tryon__title">先上传一张全身照</text>
@@ -191,17 +197,73 @@
         </view>
       </view>
     </AppSheet>
+
+    <!-- 自己挑一套：手动选单品，可试穿或存打卡 -->
+    <AppSheet
+      v-model="pickerVisible"
+      title="自己挑一套"
+      subtitle="建议挑 2-4 件搭成一套，也可只选一件"
+    >
+      <!-- 拉衣物中 -->
+      <view v-if="loadingGarments" class="picker-state">
+        <AppLoading text="正在打开衣橱…" />
+      </view>
+
+      <!-- 衣橱为空：引导去添加 -->
+      <view v-else-if="allGarments.length === 0" class="picker-empty">
+        <text class="picker-empty__t">衣橱还没有衣物</text>
+        <text class="picker-empty__s">先去添加几件，再回来挑</text>
+        <view class="picker-empty__cta" @click="goAddGarment">
+          <text>去添加衣物</text>
+        </view>
+      </view>
+
+      <!-- 候选网格：点选切换，选中高亮打勾 -->
+      <template v-else>
+        <scroll-view class="picker" scroll-y :show-scrollbar="false">
+          <view class="picker__grid">
+            <view
+              v-for="g in allGarments"
+              :key="g.id"
+              class="cand"
+              :class="{ 'cand--on': picked.has(g.id) }"
+              @click="togglePick(g.id)"
+            >
+              <image
+                class="cand__img"
+                :src="g.cutoutImageUrl || g.originalImageUrl"
+                mode="aspectFill"
+              />
+              <view v-if="picked.has(g.id)" class="cand__check">
+                <text>✓</text>
+              </view>
+              <text class="cand__name">{{ g.name }}</text>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view class="picker__actions">
+          <view class="act act--ghost" @click="pickedCheckIn">
+            <text>存为打卡</text>
+          </view>
+          <view class="act act--solid" @click="pickedTryOn">
+            <text>试穿看（{{ pickedIds.length }}）</text>
+          </view>
+        </view>
+      </template>
+    </AppSheet>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { onLoad } from '@dcloudio/uni-app';
 import {
   OCCASION_OPTIONS,
   SEASONS,
   STYLE_OPTIONS,
   seasonOfMonth,
+  type Garment,
   type MatchedOutfits,
   type Season,
 } from '@zhiyi/shared';
@@ -209,6 +271,7 @@ import AppLoading from '../../components/base/AppLoading.vue';
 import AppSheet from '../../components/base/AppSheet.vue';
 import AppTag from '../../components/base/AppTag.vue';
 import { getMatchedOutfits } from '../../api/recommend.api';
+import { listGarments } from '../../api/garment.api';
 import { tryOnOutfit, saveBodyPhoto } from '../../api/tryon.api';
 import { useUpload } from '../../composables/useUpload';
 import { useToast } from '../../composables/useToast';
@@ -238,6 +301,23 @@ const tryOnStep = ref<'need_body' | 'loading' | 'ok' | 'failed'>('loading');
 const tryOnImage = ref('');
 /** 当前正在试穿的这套单品 id（存为打卡时带走） */
 const tryOnItemIds = ref<string[]>([]);
+
+// AppSheet 只 emit update:modelValue，遮罩关闭时补清理临时态（避免下次残留旧图）
+watch(tryOnVisible, (v) => {
+  if (!v) tryOnImage.value = '';
+});
+
+// ── 自己挑一套（搭不出时兜底 + 手动组套试穿/打卡）──
+/** 选衣器弹层是否可见 */
+const pickerVisible = ref(false);
+/** 全量衣物（首次打开选衣器时懒加载） */
+const allGarments = ref<Garment[]>([]);
+/** 是否正在拉衣物 */
+const loadingGarments = ref(false);
+/** 已选单品 id 集合（Set 便于点选切换） */
+const picked = ref<Set<string>>(new Set());
+/** 已选 id 数组（模板计数与提交用；Set 无法直接被模板计数） */
+const pickedIds = computed(() => [...picked.value]);
 
 /**
  * 拉取智能搭配。任一维度变更即重新请求（AI 生成，带 loading）。
@@ -375,6 +455,54 @@ function goCheckIn(items: { id: string }[]) {
   const itemIds = items.map((i) => i.id).join(',');
   uni.navigateTo({
     url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
+  });
+}
+
+/**
+ * 打开「自己挑一套」选衣器：首次打开懒加载全量衣物。
+ * 无论搭配四态如何都可进入——搭不出时的兜底，也是手动组套试穿的入口。
+ */
+async function openPicker() {
+  pickerVisible.value = true;
+  if (allGarments.value.length || loadingGarments.value) return;
+  loadingGarments.value = true;
+  try {
+    await userStore.ensureLogin();
+    allGarments.value = await listGarments();
+  } catch {
+    // 提示已由 request / ensureLogin 统一处理
+  } finally {
+    loadingGarments.value = false;
+  }
+}
+
+/** 选衣器内点选切换（Set 增删后同步触发 computed 重算） */
+function togglePick(id: string) {
+  const next = new Set(picked.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  picked.value = next;
+}
+
+/** 手挑这套去试穿：关选衣器，复用试穿状态机（与 AI 套装同一条链路）。 */
+function pickedTryOn() {
+  if (pickedIds.value.length === 0) {
+    toast.info('先挑一件吧');
+    return;
+  }
+  pickerVisible.value = false;
+  onTryOn(pickedIds.value.map((id) => ({ id })));
+}
+
+/** 手挑这套去打卡：带单品 id 与来源 manual 跳打卡页。 */
+function pickedCheckIn() {
+  if (pickedIds.value.length === 0) {
+    toast.info('先挑一件吧');
+    return;
+  }
+  pickerVisible.value = false;
+  uni.navigateTo({
+    url: `/pages/diary/check-in?source=manual&itemIds=${pickedIds.value.join(',')}`,
   });
 }
 </script>
@@ -617,5 +745,110 @@ function goCheckIn(items: { id: string }[]) {
   display: flex;
   gap: 10px;
   width: 100%;
+}
+
+/* 自己挑一套：常驻入口 */
+.diy {
+  margin-top: 14px;
+  padding: 14px 16px;
+  background: $zy-surface;
+  border: 1px dashed $zy-line;
+  border-radius: $zy-radius;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.diy__t {
+  font-size: 15px;
+  font-weight: 600;
+  color: $zy-ink;
+}
+.diy__s {
+  font-size: 12px;
+  color: $zy-ink-3;
+}
+
+/* 选衣器弹层 */
+.picker-state {
+  padding: 40px 0;
+}
+.picker-empty {
+  padding: 40px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.picker-empty__t {
+  font-size: 15px;
+  font-weight: 600;
+  color: $zy-ink;
+}
+.picker-empty__s {
+  margin-top: 8px;
+  font-size: 13px;
+  color: $zy-ink-2;
+}
+.picker-empty__cta {
+  margin-top: 20px;
+  padding: 12px 26px;
+  border-radius: 30px;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+.picker {
+  max-height: 52vh;
+}
+.picker__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.cand {
+  position: relative;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cand__img {
+  width: 96px;
+  height: 96px;
+  border-radius: $zy-radius-sm;
+  background: $zy-bg;
+}
+.cand--on .cand__img {
+  outline: 2px solid $zy-accent;
+  outline-offset: 1px;
+}
+.cand__check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cand__name {
+  margin-top: 6px;
+  width: 96px;
+  font-size: 12px;
+  color: $zy-ink-2;
+  text-align: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.picker__actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
 }
 </style>
