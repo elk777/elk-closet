@@ -16,6 +16,7 @@ import {
 import type { UpyunConfig } from '../config/configuration';
 import {
   makeUpyunFormSign,
+  makeUpyunRestPutSign,
   type UpyunSignResult,
 } from './upyun-sign.util';
 
@@ -64,6 +65,56 @@ export class UploadService {
     // 直传成功后经 CDN 域名访问（衣物图公开读）
     const imageUrl = `${upyun.domain}${saveKey}`;
     return { ...sign, imageUrl };
+  }
+
+  /**
+   * 服务端直传一张图到又拍云（走 REST PUT，用于 AI 生成图，不经前端）。
+   *
+   * 与 signUpload 的区别：那是「签凭证交前端直传」，这是「后端拿着二进制自己传」——
+   * AI 试穿图由模型返回 base64、在服务端生成，没有前端参与，故走 REST API。
+   * 路径与 signUpload 同规则（用户隔离 + 资源类型隔离 + 随机名），保持存储结构一致。
+   * @param userId 当前登录用户 id（隔离目录，前端不可伪造）
+   * @param buffer 图片二进制
+   * @param resourceType 资源类型（如 tryon）
+   * @param ext 扩展名，限白名单，缺省 png（图像模型多返回 png）
+   * @returns 上传成功后可访问的图片 URL
+   * @throws 上传失败（网络/鉴权/又拍云拒绝）时抛错，供上层降级
+   */
+  async putImage(
+    userId: string,
+    buffer: Buffer,
+    resourceType: UploadResourceType,
+    ext = 'png',
+  ): Promise<string> {
+    const upyun = this.config.get<UpyunConfig>('upyun')!;
+    const safeExt = this.normalizeExt(ext);
+    const saveKey = `/${upyun.uploadDir}/${userId}/${resourceType}/${randomUUID()}.${safeExt}`;
+
+    const sign = makeUpyunRestPutSign({
+      bucket: upyun.bucket,
+      operator: upyun.operator,
+      password: upyun.password,
+      saveKey,
+      date: new Date().toUTCString(),
+    });
+
+    const resp = await fetch(sign.url, {
+      method: 'PUT',
+      headers: {
+        Authorization: sign.authorization,
+        Date: sign.date,
+        'Content-Type': `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
+      },
+      body: new Uint8Array(buffer),
+    });
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => '');
+      throw new Error(
+        `又拍云 PUT 失败(${resp.status})：${detail.slice(0, 200)}`,
+      );
+    }
+
+    return `${upyun.domain}${saveKey}`;
   }
 
   /** 校验并归一化扩展名，非白名单一律回退 jpg */

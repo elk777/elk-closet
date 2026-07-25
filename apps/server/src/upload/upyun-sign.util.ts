@@ -77,3 +77,59 @@ export function makeUpyunFormSign(params: UpyunSignParams): UpyunSignResult {
     saveKey,
   };
 }
+
+/** 又拍云 REST API 域名（服务端直传 PUT 用，区别于表单 API 域名） */
+const UPYUN_REST_ENDPOINT = 'https://v0.api.upyun.com';
+
+/** REST PUT 直传所需的入参 */
+export interface UpyunRestPutParams {
+  bucket: string;
+  operator: string;
+  password: string;
+  /** 保存路径（含目录前缀与文件名，前导斜杠可有可无） */
+  saveKey: string;
+  /** RFC1123 格式的 GMT 时间串（作请求头 Date 并参与签名，须一致） */
+  date: string;
+}
+
+/** REST PUT 直传所需的请求要素 */
+export interface UpyunRestPutSign {
+  /** PUT 目标完整 URL */
+  url: string;
+  /** 授权串 "UPYUN operator:signature" */
+  authorization: string;
+  /** 与签名一致的 Date 头值 */
+  date: string;
+}
+
+/**
+ * 计算又拍云 REST API 直传（PUT）的授权头（服务端上传用）。
+ *
+ * 与表单签名同源（HMAC-SHA1(md5(password), signString)），但签名串不同——
+ * REST 用 `Method & URI & Date`（URI 含桶名与完整路径），且 Date 须同时作请求头，
+ * 两处必须一致否则 401。服务端生成的图（如 AI 试穿图）走此路径直传，不经前端。
+ * @param params 桶/操作员/密码/保存路径/GMT 时间串
+ * @returns PUT 的目标 URL 与授权/时间头
+ */
+export function makeUpyunRestPutSign(
+  params: UpyunRestPutParams,
+): UpyunRestPutSign {
+  const { bucket, operator, password, saveKey, date } = params;
+
+  const path = saveKey.startsWith('/') ? saveKey : `/${saveKey}`;
+  const uri = `/${bucket}${path}`;
+  const method = 'PUT';
+  // REST 鉴权签名串：Method & URI & Date（不含 policy）
+  const signString = [method, uri, date].join('&');
+
+  const secret = createHash('md5').update(password).digest('hex');
+  const signature = createHmac('sha1', secret)
+    .update(signString)
+    .digest('base64');
+
+  return {
+    url: `${UPYUN_REST_ENDPOINT}${uri}`,
+    authorization: `UPYUN ${operator}:${signature}`,
+    date,
+  };
+}
