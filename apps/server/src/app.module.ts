@@ -8,6 +8,7 @@ import { UploadModule } from './upload/upload.module';
 import { GarmentModule } from './garment/garment.module';
 import { RecommendModule } from './recommend/recommend.module';
 import { OutfitModule } from './outfit/outfit.module';
+import { TryOnModule } from './tryon/tryon.module';
 import { HealthController } from './health/health.controller';
 
 /**
@@ -28,6 +29,7 @@ import { HealthController } from './health/health.controller';
     GarmentModule,
     RecommendModule,
     OutfitModule,
+    TryOnModule,
   ],
   controllers: [HealthController],
 })
