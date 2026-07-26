@@ -7,7 +7,7 @@
  */
 
 import OpenAI, { toFile } from 'openai';
-import { ProxyAgent } from 'undici';
+import { fetch as undiciFetch, ProxyAgent } from 'undici';
 import type {
   GuessOutfitResult,
   RecognitionResult,
@@ -49,14 +49,16 @@ export class OpenAiProvider implements AiProvider {
       timeout: options.timeoutMs,
       // 渠道配了代理才挂 dispatcher：图像渠道（gpt-image-2）本机需走代理直连，
       // 生产直连时不配此字段即原样走系统网络。代理仅作用于本渠道 client。
-      // dispatcher 走 as any 收口：@types/node 内置的 undici-types 与本项目安装的
-      // undici 版本不一致，DispatchOptions 类型标注冲突，运行时行为正确。
+      // 关键：dispatcher 必须搭配同一个 undici 包的 fetch 一起传——SDK 默认用
+      // Node 全局 fetch，与 undici 的 ProxyAgent 不是同一套实现，只传 dispatcher
+      // 会「Connection error（incompatible fetch implementation）」。
+      // dispatcher/fetch 走类型收口：@types/node 内置的 undici-types 与本项目
+      // 安装的 undici 版本不一致，类型标注冲突，运行时行为正确。
       ...(options.proxyUrl
-        ? {
-            fetchOptions: {
-              dispatcher: new ProxyAgent(options.proxyUrl),
-            } as OpenAI.RequestOptions['fetchOptions'],
-          }
+        ? ({
+            fetch: undiciFetch,
+            fetchOptions: { dispatcher: new ProxyAgent(options.proxyUrl) },
+          } as unknown as Partial<ConstructorParameters<typeof OpenAI>[0]>)
         : {}),
     });
   }
