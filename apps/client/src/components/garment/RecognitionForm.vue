@@ -66,6 +66,18 @@ const categories = ref<readonly string[]>(CATEGORIES);
 /** 品类名 → 大类 映射，供 majorTypeOf 判断自定义分类的归属 */
 const categoryMajorTypes = ref<ReadonlyMap<string, MajorType>>(new Map());
 
+/** 服装/配饰分组渲染：与衣橱筛选、设置页保持同一分组心智 */
+const clothingCategories = computed(() =>
+  categories.value.filter(
+    (c) => majorTypeOf(c, categoryMajorTypes.value) === '服装',
+  ),
+);
+const accessoryCategories = computed(() =>
+  categories.value.filter(
+    (c) => majorTypeOf(c, categoryMajorTypes.value) === '配饰',
+  ),
+);
+
 // 录入弹层打开时已登录，直接拉取（内存缓存，重复打开不重复请求）
 onMounted(async () => {
   const list = await fetchCategoriesCached();
@@ -91,12 +103,27 @@ const formalities = FORMALITY;
       />
     </view>
 
-    <!-- 品类 -->
+    <!-- 品类：按服装/配饰分组展示，与衣橱筛选、设置页同一心智；
+         混排一片 14+ 个 chip 时配饰淹没在服装里不好找 -->
     <view class="rf-field">
-      <text class="rf-label">品类</text>
+      <text class="rf-label">品类 · 服装</text>
       <view class="rf-chips">
         <view
-          v-for="c in categories"
+          v-for="c in clothingCategories"
+          :key="c"
+          class="rf-chip"
+          :class="{ 'rf-chip--on': form.category === c }"
+          @click="onCategory(c)"
+        >
+          {{ c }}
+        </view>
+      </view>
+    </view>
+    <view class="rf-field">
+      <text class="rf-label">品类 · 配饰</text>
+      <view class="rf-chips">
+        <view
+          v-for="c in accessoryCategories"
           :key="c"
           class="rf-chip"
           :class="{ 'rf-chip--on': form.category === c }"
