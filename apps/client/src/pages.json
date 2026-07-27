@@ -49,6 +49,12 @@
 			"style": {
 				"navigationBarTitleText": "穿搭详情"
 			}
+		},
+		{
+			"path": "pages/settings/settings",
+			"style": {
+				"navigationBarTitleText": "设置"
+			}
 		}
 	],
 	"globalStyle": {

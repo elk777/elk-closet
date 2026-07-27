@@ -421,6 +421,10 @@ async function uploadBody() {
     toast.error('全身照保存失败，请重试');
     return;
   }
+  // 同步进 store：设置页的全身照预览/删除入口读的是 store，不能等下次重新登录才可见
+  if (userStore.user) {
+    userStore.user = { ...userStore.user, bodyPhotoUrl: uploaded.imageUrl };
+  }
   runTryOn();
 }
 

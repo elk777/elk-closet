@@ -42,3 +42,11 @@ export function saveBodyPhoto(bodyPhotoUrl: string) {
     bodyPhotoUrl,
   });
 }
+
+/**
+ * 删除全身照（设置页隐私承诺：随时一键删除）。
+ * 幂等：没有全身照时调用也成功。删除后试穿页自然回到「先上传全身照」引导态。
+ */
+export function removeBodyPhoto() {
+  return http.post<{ bodyPhotoUrl: null }>('/tryon/body-photo/remove');
+}

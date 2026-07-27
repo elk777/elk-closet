@@ -31,6 +31,9 @@
           <view class="tool" @click="goBoard">
             <AppIcon name="board" :size="42" color="#6b6862" />
           </view>
+          <view class="tool" @click="goSettings">
+            <AppIcon name="settings" :size="42" color="#6b6862" />
+          </view>
         </view>
       </view>
     </view>
@@ -283,6 +286,11 @@ function goMatch() {
 /** 进衣橱看板（洞察） */
 function goBoard() {
   uni.navigateTo({ url: '/pages/board/board' });
+}
+
+/** 进设置（衣柜名/分类管理/全身照删除） */
+function goSettings() {
+  uni.navigateTo({ url: '/pages/settings/settings' });
 }
 
 /** 跳衣物详情 */
