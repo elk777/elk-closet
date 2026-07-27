@@ -4,18 +4,19 @@
  *
  * 展示 AI 识别的属性并允许用户逐项修改（PRD 4.1 「扫一眼、点确认」）。
  * modelValue 为 null 表示识别失败，走「先存图后补」——此时字段全空，用户可手动补。
- * 枚举选项全部来自 @zhiyi/shared 白名单（单一事实来源）。
+ * 品类选项来自用户分类表（设置页可增删），其余枚举仍来自 @zhiyi/shared 白名单。
  */
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import {
   CATEGORIES,
   SEASONS,
   THICKNESS,
   FORMALITY,
   majorTypeOf,
-  type Category,
+  type MajorType,
   type RecognitionResult,
 } from '@zhiyi/shared';
+import { fetchCategoriesCached } from '../../api/category.api';
 import AppTag from '../base/AppTag.vue';
 
 /**
@@ -42,12 +43,12 @@ function patch(key: keyof GarmentDraft, value: unknown) {
   emit('update:modelValue', { ...form.value, [key]: value });
 }
 
-/** 品类改变时联动大类，保证两者一致 */
-function onCategory(cat: Category) {
+/** 品类改变时联动大类，保证两者一致（自定义分类的归属只有用户分类表知道） */
+function onCategory(cat: string) {
   emit('update:modelValue', {
     ...form.value,
     category: cat,
-    majorType: majorTypeOf(cat),
+    majorType: majorTypeOf(cat, categoryMajorTypes.value),
   });
 }
 
@@ -60,7 +61,18 @@ function toggleSeason(s: string) {
   patch('seasons', next);
 }
 
-const categories = CATEGORIES;
+/** 品类选项：用户分类表为准，拉到前先用内置模板占位避免闪空 */
+const categories = ref<readonly string[]>(CATEGORIES);
+/** 品类名 → 大类 映射，供 majorTypeOf 判断自定义分类的归属 */
+const categoryMajorTypes = ref<ReadonlyMap<string, MajorType>>(new Map());
+
+// 录入弹层打开时已登录，直接拉取（内存缓存，重复打开不重复请求）
+onMounted(async () => {
+  const list = await fetchCategoriesCached();
+  categories.value = list.map((c) => c.name);
+  categoryMajorTypes.value = new Map(list.map((c) => [c.name, c.majorType]));
+});
+
 const seasons = SEASONS;
 const thicknesses = THICKNESS;
 const formalities = FORMALITY;

@@ -156,8 +156,6 @@
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import {
-  CLOTHING_CATEGORIES,
-  ACCESSORY_CATEGORIES,
   DEFAULT_CLOSET_NAME,
   searchGarments,
   suggestKeywords,
@@ -168,6 +166,7 @@ import GarmentCard from '../../components/garment/GarmentCard.vue';
 import AppLoading from '../../components/base/AppLoading.vue';
 import AppIcon from '../../components/base/AppIcon.vue';
 import { listGarments } from '../../api/garment.api';
+import { fetchCategoriesCached } from '../../api/category.api';
 import { useUserStore } from '../../store/user';
 import { useSafeArea } from '../../composables/useSafeArea';
 
@@ -187,8 +186,9 @@ const keyword = ref('');
 /** 联想标签浮层是否展开（聚焦时开，选词/失焦后收） */
 const suggestOpen = ref(false);
 
-const clothingCategories = CLOTHING_CATEGORIES;
-const accessoryCategories = ACCESSORY_CATEGORIES;
+/** 筛选 chip 的品类来源：用户分类表（设置页可增删），按大类分两组渲染 */
+const clothingCategories = ref<readonly string[]>([]);
+const accessoryCategories = ref<readonly string[]>([]);
 
 const userStore = useUserStore();
 /** 衣柜名：登录后取用户自定义名，未就绪用默认名兜底 */
@@ -249,9 +249,24 @@ async function loadGarments() {
   }
 }
 
+/**
+ * 加载分类筛选 chip：内存缓存命中则零请求；设置页增删分类后缓存已失效，
+ * 返回衣橱时 onShow 自动回源，chip 与用户分类保持一致。
+ */
+async function loadCategories() {
+  const list = await fetchCategoriesCached();
+  clothingCategories.value = list
+    .filter((c) => c.majorType === '服装')
+    .map((c) => c.name);
+  accessoryCategories.value = list
+    .filter((c) => c.majorType === '配饰')
+    .map((c) => c.name);
+}
+
 // 每次进入页面刷新（录入返回、详情返回都会触发），保证列表最新
 onShow(() => {
   loadGarments();
+  loadCategories();
 });
 
 /** 录入成功：关弹层 + 刷新列表 */
