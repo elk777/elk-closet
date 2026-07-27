@@ -15,7 +15,7 @@ export class HealthController {
     return {
       status: 'ok',
       time: new Date().toISOString(),
-      /** 回显共享枚举数量，确认 shared 包已正确加载 */
+      /** 回显共享包内置分类模板的数量，确认 shared 包已正确加载（品类运行时白名单在用户分类表） */
       categories: CATEGORIES.length,
     };
   }

@@ -40,10 +40,15 @@ export interface AiClientOptions {
   proxyUrl?: string;
 }
 
-/** 识别入参：一张衣物图 */
+/** 识别入参：一张衣物图 + 该用户的品类候选集 */
 export interface RecognizeInput {
   /** 衣物图可公开访问的 URL（对象存储 / CDN） */
   imageUrl: string;
+  /**
+   * 品类候选集：来自用户分类表（自定义分类要能被 AI 识别命中，就必须进 prompt）。
+   * 缺省时 prompt 回退内置模板 CATEGORIES。
+   */
+  categories?: readonly string[];
 }
 
 /** 预猜候选：衣橱里一件衣物的最小标识（id + 图 + 简述），供多图视觉比对 */

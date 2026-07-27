@@ -23,7 +23,7 @@ import type {
 } from './ai-provider.interface';
 import {
   parseRecognition,
-  RECOGNITION_SYSTEM_PROMPT,
+  buildRecognitionSystemPrompt,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
 import {
@@ -99,7 +99,7 @@ export class AnthropicProvider implements AiProvider {
     input: RecognizeInput,
     model: string,
   ): Promise<RecognitionResult> {
-    const raw = await this.callModel(input.imageUrl, model);
+    const raw = await this.callModel(input, model);
     return parseRecognition(raw);
   }
 
@@ -165,20 +165,23 @@ export class AnthropicProvider implements AiProvider {
 
   /**
    * 调用 Anthropic messages 接口做 vision 识别。
-   * @param imageUrl 衣物图 URL（走 image 块的 url 源）
+   * @param input 衣物图 URL + 用户品类候选集（拼进 system prompt）
    * @param model 使用的模型名
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
-  private async callModel(imageUrl: string, model: string): Promise<string> {
+  private async callModel(
+    input: RecognizeInput,
+    model: string,
+  ): Promise<string> {
     const message = await this.client.messages.create({
       model,
       max_tokens: 1024,
-      system: RECOGNITION_SYSTEM_PROMPT,
+      system: buildRecognitionSystemPrompt(input.categories),
       messages: [
         {
           role: 'user',
           content: [
-            { type: 'image', source: { type: 'url', url: imageUrl } },
+            { type: 'image', source: { type: 'url', url: input.imageUrl } },
             { type: 'text', text: RECOGNITION_USER_PROMPT },
           ],
         },

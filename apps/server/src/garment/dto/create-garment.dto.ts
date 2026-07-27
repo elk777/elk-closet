@@ -7,10 +7,11 @@
  *
  * 枚举字段复用 @zhiyi/shared 的白名单（单一事实来源），
  * 与 AI 契约、数据库三者一致；class-validator 在边界拦截非法值。
+ * 例外：category 是用户级数据（分类表），DTO 只做形态约束，
+ * 是否命中用户分类由 service 判断，未命中归「其他」（与 AI 识别兜底一致）。
  */
 
 import {
-  CATEGORIES,
   FORMALITY,
   MAJOR_TYPES,
   SEASONS,
@@ -45,9 +46,9 @@ export class CreateGarmentDto {
   @IsString()
   name?: string;
 
-  /** 品类：命中 shared 白名单 */
+  /** 品类：用户级白名单（分类表）由 service 校验，未命中归「其他」 */
   @IsOptional()
-  @IsIn(CATEGORIES as readonly string[], { message: 'category 不在白名单内' })
+  @IsString()
   category?: string;
 
   /** 大类：服装 | 配饰；缺省时按 category 推导 */

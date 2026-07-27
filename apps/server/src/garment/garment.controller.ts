@@ -32,13 +32,14 @@ export class GarmentController {
    *
    * 识别失败不抛 500：返回 recognized=false，前端据此走「先存图后补」，
    * 生命线不被 AI 波动阻断（PRD 5.6）。
+   * @param user 当前登录用户（品类候选集按其分类表拼装）
    * @param dto 已上传的衣物图 URL
    * @returns 识别结果，或失败标记
    */
   @Post('recognize')
-  async recognize(@Body() dto: RecognizeGarmentDto) {
+  async recognize(@CurrentUser() user: User, @Body() dto: RecognizeGarmentDto) {
     try {
-      const result = await this.garments.recognize(dto.imageUrl);
+      const result = await this.garments.recognize(user.id, dto.imageUrl);
       return { recognized: true, result };
     } catch {
       // 识别失败降级：告知前端可只存图后补，不阻塞录入

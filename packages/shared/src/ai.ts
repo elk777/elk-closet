@@ -9,7 +9,6 @@
 
 import { z } from 'zod';
 import {
-  CATEGORIES,
   MAJOR_TYPES,
   THICKNESS,
   SEASONS,
@@ -29,8 +28,11 @@ import type { Garment } from './garment';
  * confidence 决定是否提示用户复核（低置信度高亮核对）。
  */
 export const RecognitionResultSchema = z.object({
-  /** 品类：必须命中白名单；模型不确定时应返回「其他」 */
-  category: z.enum(CATEGORIES),
+  /**
+   * 品类：候选集是用户级数据（分类表），schema 无法静态枚举——
+   * 是否命中由后端 service 按用户分类集判断，未命中归「其他」
+   */
+  category: z.string().min(1),
   /** 大类：服装 / 配饰 */
   majorType: z.enum(MAJOR_TYPES),
   /** 主色名，如「米白」 */
@@ -93,7 +95,8 @@ export type RecommendWeather = z.infer<typeof RecommendWeatherSchema>;
  */
 export const WardrobeBriefItemSchema = z.object({
   id: z.string(),
-  category: z.enum(CATEGORIES),
+  /** 品类：用户级数据，可能是自定义分类，不做静态枚举约束 */
+  category: z.string(),
   color: z.string(),
   seasons: z.array(z.enum(SEASONS)),
   formality: z.enum(FORMALITY),

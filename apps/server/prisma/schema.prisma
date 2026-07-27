@@ -47,8 +47,27 @@ model User {
 
   garments  Garment[]
   outfits   Outfit[]
+  categories Category[]
 
   @@map("users")
+}
+
+/// 用户自定义品类：录入白名单 / AI 候选集 / 衣橱筛选的单一事实来源（设置页可增删）。
+/// 内置分类在用户首次触达分类接口时惰性播种（模板 = shared 的枚举全集），
+/// 老用户无需回填 migration。「其他」是 AI 兜底归属，服务层禁删。
+model Category {
+  id        String   @id @default(cuid())
+  ownerId   String   @map("owner_id")
+  owner     User     @relation(fields: [ownerId], references: [id])
+  name      String
+  /// 大类：服装 | 配饰，决定设置页/衣橱筛选归入哪一组
+  majorType String   @map("major_type")
+  /// 是否播种自内置模板；仅信息展示用，不影响可删性（唯一禁删的是「其他」）
+  builtin   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([ownerId, name])
+  @@map("categories")
 }
 
 /// 衣物：录入生命线的核心实体（PRD 4.1 / 5.5.2）。

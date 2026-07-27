@@ -24,7 +24,7 @@ import type {
 } from './ai-provider.interface';
 import {
   parseRecognition,
-  RECOGNITION_SYSTEM_PROMPT,
+  buildRecognitionSystemPrompt,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
 import {
@@ -69,7 +69,7 @@ export class OpenAiProvider implements AiProvider {
     input: RecognizeInput,
     model: string,
   ): Promise<RecognitionResult> {
-    const raw = await this.callModel(input.imageUrl, model);
+    const raw = await this.callModel(input, model);
     return parseRecognition(raw);
   }
 
@@ -131,23 +131,26 @@ export class OpenAiProvider implements AiProvider {
 
   /**
    * 调用 OpenAI chat.completions 做 vision 识别。
-   * @param imageUrl 衣物图 URL（走 image_url 内容块）
+   * @param input 衣物图 URL + 用户品类候选集（拼进 system prompt）
    * @param model 使用的模型名
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
-  private async callModel(imageUrl: string, model: string): Promise<string> {
+  private async callModel(
+    input: RecognizeInput,
+    model: string,
+  ): Promise<string> {
     const completion = await this.client.chat.completions.create({
       model,
       max_tokens: 1024,
       // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: RECOGNITION_SYSTEM_PROMPT },
+        { role: 'system', content: buildRecognitionSystemPrompt(input.categories) },
         {
           role: 'user',
           content: [
             { type: 'text', text: RECOGNITION_USER_PROMPT },
-            { type: 'image_url', image_url: { url: imageUrl } },
+            { type: 'image_url', image_url: { url: input.imageUrl } },
           ],
         },
       ],

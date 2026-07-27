@@ -9,6 +9,7 @@ import { GarmentModule } from './garment/garment.module';
 import { RecommendModule } from './recommend/recommend.module';
 import { OutfitModule } from './outfit/outfit.module';
 import { TryOnModule } from './tryon/tryon.module';
+import { CategoryModule } from './category/category.module';
 import { HealthController } from './health/health.controller';
 
 /**
@@ -16,7 +17,7 @@ import { HealthController } from './health/health.controller';
  *
  * 基建模块（全局）：配置（含启动即校验）、Prisma 数据访问、AI 能力。
  * 业务模块：User / Auth / Upload / Garment（录入生命线）/ Recommend（今日推荐）
- *   / Outfit（穿搭日记）。
+ *   / Outfit（穿搭日记）/ TryOn（AI 试穿）/ Category（用户级分类管理）。
  */
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { HealthController } from './health/health.controller';
     RecommendModule,
     OutfitModule,
     TryOnModule,
+    CategoryModule,
   ],
   controllers: [HealthController],
 })

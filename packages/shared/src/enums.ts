@@ -4,13 +4,17 @@
  * 为什么集中在此：PRD 5.5 约定「核心字段定死 + Zod 双重约束」。
  * 这些常量同时被后端 Zod 校验、前端筛选/表单、AI prompt 引用，
  * 放一处避免三方漂移（后端加了品类、前端漏同步 → bug）。
+ *
+ * 例外：品类（CATEGORIES）已升级为用户级数据（categories 表，设置页可增删），
+ * 运行时的品类白名单以用户分类表为准；此处的品类常量降级为
+ * 「新用户播种模板 + 无用户上下文时的兜底」，不再是运行时校验依据。
  */
 
 /** 大类：决定衣橱两组筛选（服装 / 配饰） */
 export const MAJOR_TYPES = ['服装', '配饰'] as const;
 export type MajorType = (typeof MAJOR_TYPES)[number];
 
-/** 服装品类 */
+/** 服装品类（播种模板：新用户默认分类的服装组） */
 export const CLOTHING_CATEGORIES = [
   '上衣',
   '裤子',
@@ -21,7 +25,7 @@ export const CLOTHING_CATEGORIES = [
   '鞋子',
 ] as const;
 
-/** 配饰品类 */
+/** 配饰品类（播种模板：新用户默认分类的配饰组；「其他」为 AI 兜底归属，禁删） */
 export const ACCESSORY_CATEGORIES = [
   '包包',
   '帽子',
@@ -32,11 +36,15 @@ export const ACCESSORY_CATEGORIES = [
   '其他',
 ] as const;
 
-/** 全部品类白名单：AI 识别的 category 必须命中其一，否则归「其他」 */
+/**
+ * 全部内置品类：新用户分类表的播种模板全集。
+ * 运行时白名单以用户分类表为准（未命中归「其他」），此常量仅作模板与兜底。
+ */
 export const CATEGORIES = [
   ...CLOTHING_CATEGORIES,
   ...ACCESSORY_CATEGORIES,
 ] as const;
+/** 内置品类的字面量联合：仅描述播种模板；运行时品类是用户级 string，勿用作衣物字段类型 */
 export type Category = (typeof CATEGORIES)[number];
 
 /** 厚薄：驱动天气推荐（冷天优先厚款） */
@@ -112,10 +120,19 @@ export const DEFAULT_UPLOAD_RESOURCE_TYPE: UploadResourceType = 'garments';
 
 /**
  * 判断品类属于服装还是配饰。
- * @param category 品类
+ *
+ * 品类已用户化：有用户分类上下文时优先按用户分类表判断（自定义分类
+ * 只能由此得知归属），未命中再按内置模板兜底（非服装内置品类一律视为配饰）。
+ * @param category 品类名（可能是用户自定义分类）
+ * @param userMajorTypes 用户分类名 → 大类 的映射，可选
  * @returns 对应大类
  */
-export function majorTypeOf(category: Category): MajorType {
+export function majorTypeOf(
+  category: string,
+  userMajorTypes?: ReadonlyMap<string, MajorType>,
+): MajorType {
+  const fromUser = userMajorTypes?.get(category);
+  if (fromUser) return fromUser;
   return (CLOTHING_CATEGORIES as readonly string[]).includes(category)
     ? '服装'
     : '配饰';

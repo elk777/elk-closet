@@ -10,19 +10,15 @@
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import {
-  majorTypeOf,
-  type Category,
-  type RecognitionResult,
-} from '@zhiyi/shared';
+import { majorTypeOf, type RecognitionResult } from '@zhiyi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
+import { CategoryService, FALLBACK_CATEGORY } from '../category/category.service';
 import type { CreateGarmentDto } from './dto/create-garment.dto';
 
-/** 先存图后补时，缺省属性的兜底值（PRD 5.6.1：不阻塞录入） */
+/** 先存图后补时，缺省属性的兜底值（PRD 5.6.1：不阻塞录入）；品类兜底见 FALLBACK_CATEGORY */
 const FALLBACK = {
   name: '待整理衣物',
-  category: '其他',
   mainColor: '未知',
   colorHex: '#CCCCCC',
   thickness: '中',
@@ -35,27 +31,52 @@ export class GarmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
+    private readonly categories: CategoryService,
   ) {}
 
   /**
    * 识别衣物属性，不入库——供录入确认页预填（PRD 5.5.2）。
+   *
+   * 品类候选集取自用户分类表（自定义分类要能被 AI 命中就必须进 prompt）；
+   * AI 返回不在用户分类集内时归「其他」（与 prompt 内约定一致的双重兜底）。
+   * @param ownerId 当前登录用户 id
    * @param imageUrl 又拍云直传后的图 URL
-   * @returns 已过 Zod 校验的识别结果
+   * @returns 已过 Zod 校验、品类已按用户集裁剪的识别结果
    */
-  recognize(imageUrl: string): Promise<RecognitionResult> {
-    return this.ai.recognize({ imageUrl });
+  async recognize(
+    ownerId: string,
+    imageUrl: string,
+  ): Promise<RecognitionResult> {
+    const { names, majorTypes } = await this.categories.namesOf(ownerId);
+    const result = await this.ai.recognize({ imageUrl, categories: names });
+    if (!names.includes(result.category)) {
+      return {
+        ...result,
+        category: FALLBACK_CATEGORY,
+        majorType: majorTypeOf(FALLBACK_CATEGORY, majorTypes),
+      };
+    }
+    // majorType 以用户分类表登记的归属为准，防模型答非所问
+    return { ...result, majorType: majorTypeOf(result.category, majorTypes) };
   }
 
   /**
    * 创建衣物。缺省属性用兜底值补齐，支持「先存图后补」。
+   *
+   * 品类按用户分类表校验：未命中不报错而是归「其他」——与 AI 识别兜底策略
+   * 一致，录入生命线不因分类漂移（如刚被删除的分类）而中断。
    * @param ownerId 归属用户 id
    * @param dto 创建入参（属性可全缺省，仅图必填）
    * @returns 新建的衣物
    */
-  create(ownerId: string, dto: CreateGarmentDto) {
-    const category = (dto.category ?? FALLBACK.category) as Category;
-    // majorType 缺省时按品类推导，保证与 category 一致（防前后端不同步）
-    const majorType = dto.majorType ?? majorTypeOf(category);
+  async create(ownerId: string, dto: CreateGarmentDto) {
+    const { names, majorTypes } = await this.categories.namesOf(ownerId);
+    const category =
+      dto.category && names.includes(dto.category)
+        ? dto.category
+        : FALLBACK_CATEGORY;
+    // majorType 一律按分类表归属推导，保证与 category 一致（防前后端不同步）
+    const majorType = majorTypeOf(category, majorTypes);
 
     return this.prisma.garment.create({
       data: {

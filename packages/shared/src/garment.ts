@@ -6,19 +6,14 @@
  * - styleTags / extra：AI 的额外发现，落 JSONB，不频繁改表
  */
 
-import type {
-  Category,
-  Formality,
-  MajorType,
-  Season,
-  Thickness,
-} from './enums';
+import type { Formality, MajorType, Season, Thickness } from './enums';
 
 /** 衣物核心结构化字段（AI 识别 + 用户可改） */
 export interface GarmentAttributes {
   /** 名称，如「米白针织衫」 */
   name: string;
-  category: Category;
+  /** 品类：用户级数据（分类表，设置页可增删），可能是自定义分类，故为 string */
+  category: string;
   majorType: MajorType;
   /** 主色调中文名，如「米白」 */
   mainColor: string;

@@ -17,7 +17,6 @@ import {
   pruneRecommend,
   RECOMMEND_UNLOCK_THRESHOLD,
   seasonOfMonth,
-  type Category,
   type Formality,
   type Garment,
   type MatchedOutfits,
@@ -165,7 +164,8 @@ export class RecommendService {
   private toBrief(garments: Garment[]): WardrobeBriefItem[] {
     return garments.map((g) => ({
       id: g.id,
-      category: g.category as Category,
+      // 品类已用户化（可能是自定义分类），摘要按原值直传
+      category: g.category,
       color: g.mainColor,
       seasons: g.seasons as Season[],
       formality: g.formality as Formality,

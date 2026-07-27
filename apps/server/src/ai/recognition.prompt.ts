@@ -17,17 +17,23 @@ import {
 } from '@zhiyi/shared';
 
 /**
- * 识别用的 system prompt。
+ * 识别用的 system prompt（按用户品类候选集动态拼装）。
  *
- * 把枚举白名单直接写进 prompt（与 Zod 双重约束，PRD 5.5.1）：
- * 一层约束模型少犯错，一层在后端兜底拦截，脏数据绝不进库。
+ * 品类已用户化：候选集来自调用方传入的用户分类表（自定义分类要能被识别命中，
+ * 必须进 prompt），缺省回退内置模板。其余枚举仍是静态白名单，
+ * 与 Zod 双重约束（PRD 5.5.1）：一层约束模型少犯错，一层在后端兜底拦截。
+ * @param categories 品类候选集；缺省用内置模板 CATEGORIES
+ * @returns 拼装好的 system prompt
  */
-export const RECOGNITION_SYSTEM_PROMPT = `你是服装衣物识别助手。分析用户提供的单件衣物图片，输出结构化属性。
+export function buildRecognitionSystemPrompt(
+  categories: readonly string[] = CATEGORIES,
+): string {
+  return `你是服装衣物识别助手。分析用户提供的单件衣物图片，输出结构化属性。
 
 严格要求：
 1. 只返回一个 JSON 对象，不要任何解释文字、不要 markdown 代码块。
 2. 枚举字段的值必须从下方白名单中选取，不得自创：
-   - category（品类）：${CATEGORIES.join(' / ')}
+   - category（品类）：${categories.join(' / ')}
    - majorType（大类）：${MAJOR_TYPES.join(' / ')}
    - thickness（厚薄）：${THICKNESS.join(' / ')}
    - formality（正式度）：${FORMALITY.join(' / ')}
@@ -50,6 +56,7 @@ export const RECOGNITION_SYSTEM_PROMPT = `你是服装衣物识别助手。分�
   "confidence": 0.92,
   "extra": {}
 }`;
+}
 
 /** 用户侧提示语（图片随此消息一起传，具体格式由各 Provider 适配） */
 export const RECOGNITION_USER_PROMPT = '请识别这件衣物的属性，按要求只返回 JSON。';
