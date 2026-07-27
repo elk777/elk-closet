@@ -20,19 +20,19 @@
         <view class="toprail__cap" :style="{ height: menuHeight + 'px' }" />
         <view class="tools">
           <view class="tool" @click="goCloset">
-            <AppIcon name="closet" :size="42" color="#6b6862" />
+            <AppIcon name="closet" :size="38" color="#6b6862" />
           </view>
           <view class="tool" @click="goDiary">
-            <AppIcon name="diary" :size="42" color="#6b6862" />
+            <AppIcon name="diary" :size="38" color="#6b6862" />
           </view>
           <view class="tool" @click="goMatch">
-            <AppIcon name="match" :size="42" color="#6b6862" />
+            <AppIcon name="match" :size="38" color="#6b6862" />
           </view>
           <view class="tool" @click="goBoard">
-            <AppIcon name="board" :size="42" color="#6b6862" />
+            <AppIcon name="board" :size="38" color="#6b6862" />
           </view>
           <view class="tool" @click="goSettings">
-            <AppIcon name="settings" :size="42" color="#6b6862" />
+            <AppIcon name="settings" :size="38" color="#6b6862" />
           </view>
         </view>
       </view>
@@ -370,10 +370,11 @@ function goCheckIn(items: { id: string }[]) {
   white-space: nowrap;
 }
 .tools {
-  /* 落在胶囊占位块正下方那一行；留一点上间距与胶囊分隔 */
+  /* 落在胶囊占位块正下方那一行；留一点上间距与胶囊分隔。
+     五图标后宽度吃紧：图标 38 + 间距 6，避免挤得左侧品牌区换行 */
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   margin-top: 10px;
 }
 .tool {
@@ -381,8 +382,8 @@ function goCheckIn(items: { id: string }[]) {
   align-items: center;
   justify-content: center;
   /* 纯线条图标，无常驻底色——回归 demo 简约调性，右侧减重与左侧 logo 一重一轻更平衡 */
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
 }
 .searchwrap {
   padding: 2px 0 12px;
