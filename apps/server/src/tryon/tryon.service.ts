@@ -43,6 +43,22 @@ export class TryOnService {
   }
 
   /**
+   * 删除用户全身照（设置页一键删除，兑现试穿页的隐私承诺）。
+   *
+   * 只清库里的 URL：删除后试穿接口自然回 no_body 引导态。
+   * 又拍云上的物理文件本期不删（涉及管理 API，记入遗留）。
+   * @param ownerId 当前登录用户 id
+   * @returns removed 恒为 true（幂等：本就没有也视为删除成功）
+   */
+  async removeBodyPhoto(ownerId: string): Promise<{ removed: boolean }> {
+    await this.prisma.user.update({
+      where: { id: ownerId },
+      data: { bodyPhotoUrl: null },
+    });
+    return { removed: true };
+  }
+
+  /**
    * 试穿一套：把指定单品合成到用户全身照上。
    *
    * @param ownerId 当前登录用户 id（单品与全身照均按此隔离，杜绝越权）

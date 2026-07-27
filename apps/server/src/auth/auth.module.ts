@@ -17,8 +17,11 @@ import { JwtAuthGuard } from './jwt-auth.guard';
   imports: [
     UserModule,
     // secret / expiresIn 在模块注册时从配置读定，签发与校验统一走这套默认值，
-    // 调用点不必再传 options（规避 @nestjs/jwt v11 对 expiresIn 的模板类型约束）
+    // 调用点不必再传 options（规避 @nestjs/jwt v11 对 expiresIn 的模板类型约束）。
+    // global：JwtService 全局可用——UserModule 等模块用 JwtAuthGuard 时无需
+    // 反向 import AuthModule（避免 Auth ↔ User 模块环）。
     JwtModule.registerAsync({
+      global: true,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const { secret, expiresIn } = config.get<JwtConfig>('jwt')!;

@@ -46,4 +46,14 @@ export class TryOnController {
   ): Promise<{ bodyPhotoUrl: string }> {
     return this.tryon.saveBodyPhoto(user.id, dto.bodyPhotoUrl);
   }
+
+  /**
+   * 一键删除全身照（设置页隐私操作；动作型接口用 POST，小程序无 PATCH/DELETE 惯例）。
+   * @param user 当前登录用户
+   * @returns 删除结果（幂等）
+   */
+  @Post('body-photo/remove')
+  removeBodyPhoto(@CurrentUser() user: User): Promise<{ removed: boolean }> {
+    return this.tryon.removeBodyPhoto(user.id);
+  }
 }

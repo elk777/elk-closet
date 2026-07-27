@@ -54,6 +54,20 @@ export class UserService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  /**
+   * 修改衣柜名（设置页）。
+   * @param id 用户内部主键
+   * @param closetName 新衣柜名（DTO 已 trim + 长度校验）
+   * @returns 更新后的衣柜名（供前端回显）
+   */
+  async updateClosetName(
+    id: string,
+    closetName: string,
+  ): Promise<{ closetName: string }> {
+    await this.prisma.user.update({ where: { id }, data: { closetName } });
+    return { closetName };
+  }
+
   /** 把身份标识拼成 Prisma 的 OR 查询条件 */
   private buildWhere(identity: Identity) {
     const clauses = [];
