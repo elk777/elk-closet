@@ -89,17 +89,19 @@
 
     <!-- 有衣物：分类筛选 + 网格 -->
     <template v-else>
-      <!-- 分类筛选：全部 + 服装组 + 配饰组 -->
-      <scroll-view class="filter" scroll-x :show-scrollbar="false">
-        <view class="filter__row">
-          <view
-            class="chip"
-            :class="{ 'chip--on': activeCategory === ALL }"
-            @click="activeCategory = ALL"
-          >
-            全部
-          </view>
-          <view class="chip-group">
+      <!-- 分类筛选：对齐 demo 的两行分组（服装 / 配饰 各带小标签），
+           混排一行时两组视觉无界、横滑找配饰成本高。「全部」放服装行首。 -->
+      <view class="fgroup">
+        <text class="fgroup__label">服装</text>
+        <scroll-view class="filter" scroll-x :show-scrollbar="false">
+          <view class="filter__row">
+            <view
+              class="chip"
+              :class="{ 'chip--on': activeCategory === ALL }"
+              @click="activeCategory = ALL"
+            >
+              全部
+            </view>
             <view
               v-for="c in clothingCategories"
               :key="c"
@@ -110,8 +112,12 @@
               {{ c }}
             </view>
           </view>
-          <view class="chip-divider" />
-          <view class="chip-group">
+        </scroll-view>
+      </view>
+      <view class="fgroup">
+        <text class="fgroup__label">配饰</text>
+        <scroll-view class="filter" scroll-x :show-scrollbar="false">
+          <view class="filter__row">
             <view
               v-for="c in accessoryCategories"
               :key="c"
@@ -122,8 +128,8 @@
               {{ c }}
             </view>
           </view>
-        </view>
-      </scroll-view>
+        </scroll-view>
+      </view>
 
       <!-- 筛选后为空：分类空态（PRD 5.6.4） -->
       <view v-if="filtered.length === 0" class="empty">
@@ -391,6 +397,17 @@ function goDetail(id: string) {
   color: $zy-ink;
   font-weight: 700;
 }
+.fgroup {
+  margin-bottom: 2px;
+}
+.fgroup__label {
+  display: block;
+  padding: 0 20px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: $zy-ink-3;
+}
 .filter {
   white-space: nowrap;
   padding: 4px 0 12px;
@@ -400,16 +417,6 @@ function goDetail(id: string) {
   align-items: center;
   gap: 8px;
   padding: 0 20px;
-}
-.chip-group {
-  display: inline-flex;
-  gap: 8px;
-}
-.chip-divider {
-  width: 1px;
-  height: 20px;
-  background: $zy-line;
-  margin: 0 4px;
 }
 .chip {
   display: inline-block;
