@@ -127,10 +127,33 @@ export class AiService {
   }
 
   /**
+   * 识别前预检：衣物图 URL 必须可访问才值得调模型。
+   *
+   * 动因（2026-07-28 故障复盘）：CDN 挂掉时部分模型（如 kimi）抓不到图
+   * 不报错，而是照 prompt 编造一份像模像样的假结果污染确认页。
+   * 花几百毫秒 HEAD 一次，图挂了立即走「先存图后补」降级，诚实且省 20s 模型耗时。
+   * @param imageUrl 待识别的衣物图 URL
+   * @throws Error 图片不可达（非 2xx/3xx 或超时）
+   */
+  private async assertImageReachable(imageUrl: string): Promise<void> {
+    try {
+      const resp = await fetch(imageUrl, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!resp.ok) {
+        throw new Error(`图片响应 ${resp.status}`);
+      }
+    } catch (err) {
+      throw new Error(`衣物图不可访问，跳过模型调用：${String(err)}`);
+    }
+  }
+
+  /**
    * 识别衣物属性，主路由失败自动重试/切兜底（见 callWithFallback）。
    * @param input 待识别的衣物图
    * @returns 已过 Zod 校验的识别结果
-   * @throws RecognitionFailedError 无 vision 能力，或主备均失败
+   * @throws RecognitionFailedError 无 vision 能力、图不可达，或主备均失败
    */
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
     const route = this.routes.recognize;
@@ -139,6 +162,13 @@ export class AiService {
       throw new RecognitionFailedError(
         new Error('识别路由的模型无 vision 能力'),
       );
+    }
+    // 图不可达：模型看不到图会编造假结果，预检失败直接降级
+    try {
+      await this.assertImageReachable(input.imageUrl);
+    } catch (err) {
+      this.logger.warn(String(err));
+      throw new RecognitionFailedError(err);
     }
     try {
       return await this.callWithFallback('recognize', (p, model) =>

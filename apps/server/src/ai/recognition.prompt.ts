@@ -28,19 +28,21 @@ import {
 export function buildRecognitionSystemPrompt(
   categories: readonly string[] = CATEGORIES,
 ): string {
-  return `你是服装衣物识别助手。分析用户提供的单件衣物图片，输出结构化属性。
+  return `你是服饰识别助手，识别对象包括服装（上衣、裤子、鞋子等）与配饰（包包、帽子、首饰等）。分析用户提供的单件物品图片，输出结构化属性。
 
 严格要求：
 1. 只返回一个 JSON 对象，不要任何解释文字、不要 markdown 代码块。
-2. 枚举字段的值必须从下方白名单中选取，不得自创：
+2. 先判断大类 majorType（服装 还是 配饰），再从该大类下选择具体品类——包包/帽子/首饰等配饰不要归入任何服装品类。
+3. 枚举字段的值必须从下方白名单中选取，不得自创：
    - category（品类）：${categories.join(' / ')}
    - majorType（大类）：${MAJOR_TYPES.join(' / ')}
    - thickness（厚薄）：${THICKNESS.join(' / ')}
    - formality（正式度）：${FORMALITY.join(' / ')}
    - seasons（适用季节，数组，至少一项）：${SEASONS.join(' / ')}
-3. 无法确定品类时，category 填「其他」。
-4. colorHex 用 #RRGGBB 六位十六进制近似主色。
-5. confidence 为你对本次识别的自评置信度，0~1 的小数。
+4. 无法确定品类时，category 填「其他」。
+5. 如果你无法查看或加载图片，禁止凭空猜测：category 填「其他」，confidence 填 0。
+6. colorHex 用 #RRGGBB 六位十六进制近似主色。
+7. confidence 为你对本次识别的自评置信度，0~1 的小数。
 
 返回字段：
 {
@@ -59,7 +61,7 @@ export function buildRecognitionSystemPrompt(
 }
 
 /** 用户侧提示语（图片随此消息一起传，具体格式由各 Provider 适配） */
-export const RECOGNITION_USER_PROMPT = '请识别这件衣物的属性，按要求只返回 JSON。';
+export const RECOGNITION_USER_PROMPT = '请识别这件服饰的属性，按要求只返回 JSON。';
 
 /**
  * 从模型返回的原始文本中提取 JSON 并过 Zod 校验（PRD 5.5.4 兜底）。
