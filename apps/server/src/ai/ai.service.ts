@@ -1,11 +1,11 @@
 /**
  * AiService：业务层调用 AI 的统一入口。
  *
- * 按能力路由分发：每个能力（识别/推荐/预猜）从路由表拿到「渠道 + 模型 + 是否 vision」，
- * 取对应渠道的 Provider 并把 model 作为入参调用；在其上包一层「重试 + 降级」策略（PRD 5.5.4）：
- * - 识别失败（非法 JSON / Zod 校验不过 / 网络抖动）先自动重试 1 次，仍失败抛错走「先存图后补」
- * - 推荐失败重试 1 次仍失败抛错，上层降级为空推荐
- * - 预猜尽力而为，失败重试 1 次仍失败返回空命中，前端手动选
+ * 按能力路由分发：每个能力（识别/推荐/预猜/试穿）从路由表拿到「渠道 + 模型 + 是否 vision」，
+ * 取对应渠道的 Provider 并把 model 作为入参调用；在其上包一层「主备切换/重试 + 降级」策略（PRD 5.5.4）：
+ * - 配了兜底路由（AI_ROUTE_*__FALLBACK_*）：主「渠道+模型」失败直接切兜底再试一次
+ * - 未配兜底：失败后同路由重试 1 次（历史行为）
+ * - 仍失败按能力降级：识别抛错走「先存图后补」，推荐/试穿抛错提示稍后再试，预猜返回空命中手动选
  *
  * vision 判定下放到能力级：某能力路由标 vision=false 时（所选模型不支持传图），
  * 识别/预猜直接降级，不空调必失败的传图接口。推荐纯文本，不涉及 vision。
@@ -22,7 +22,11 @@ import type {
   RecommendOutput,
   TryOnInput,
 } from '@zhiyi/shared';
-import type { AiConfig, AiRouteConfig } from '../config/configuration';
+import type {
+  AiAbility,
+  AiConfig,
+  AiRouteConfig,
+} from '../config/configuration';
 import {
   AI_CHANNELS,
   type AiProvider,
@@ -90,10 +94,43 @@ export class AiService {
   }
 
   /**
-   * 识别衣物属性，失败自动重试 1 次。
+   * 按「主路由 → 兜底路由」策略执行一次 AI 调用。
+   *
+   * - 未配兜底：主路由失败后同路由重试 1 次（保持历史行为）。
+   * - 配了兜底：主路由失败直接切兜底「渠道+模型」再试 1 次——不在主路由上
+   *   重试，因为公益站/中转站的失败多为上游按模型维度失效，原地重试大概率还挂。
+   * 两条路径都失败时抛最后一次的错误，由调用方按各能力语义降级。
+   *
+   * @param ability 能力名（用于路由查表与日志）
+   * @param invoke 实际调用：拿到 Provider 与 model 发起请求
+   * @returns invoke 的成功结果
+   */
+  private async callWithFallback<T>(
+    ability: AiAbility,
+    invoke: (provider: AiProvider, model: string) => Promise<T>,
+  ): Promise<T> {
+    const route = this.routes[ability];
+    try {
+      return await invoke(this.providerOf(route), route.model);
+    } catch (first) {
+      const fb = route.fallback;
+      if (!fb) {
+        this.logger.warn(`${ability} 失败，同路由重试一次：${String(first)}`);
+        return await invoke(this.providerOf(route), route.model);
+      }
+      this.logger.warn(
+        `${ability} 主路由失败（${route.channel}/${route.model}），` +
+          `切换兜底（${fb.channel}/${fb.model}）：${String(first)}`,
+      );
+      return await invoke(this.channels.get(fb.channel)!, fb.model);
+    }
+  }
+
+  /**
+   * 识别衣物属性，主路由失败自动重试/切兜底（见 callWithFallback）。
    * @param input 待识别的衣物图
    * @returns 已过 Zod 校验的识别结果
-   * @throws RecognitionFailedError 无 vision 能力，或重试后仍失败
+   * @throws RecognitionFailedError 无 vision 能力，或主备均失败
    */
   async recognize(input: RecognizeInput): Promise<RecognitionResult> {
     const route = this.routes.recognize;
@@ -103,39 +140,30 @@ export class AiService {
         new Error('识别路由的模型无 vision 能力'),
       );
     }
-    const provider = this.providerOf(route);
     try {
-      return await provider.recognize(input, route.model);
-    } catch (first) {
-      this.logger.warn(`识别失败，重试一次：${String(first)}`);
-      try {
-        return await provider.recognize(input, route.model);
-      } catch (second) {
-        this.logger.error(`识别重试仍失败：${String(second)}`);
-        throw new RecognitionFailedError(second);
-      }
+      return await this.callWithFallback('recognize', (p, model) =>
+        p.recognize(input, model),
+      );
+    } catch (err) {
+      this.logger.error(`识别主备均失败：${String(err)}`);
+      throw new RecognitionFailedError(err);
     }
   }
 
   /**
-   * 生成搭配推荐，失败自动重试 1 次。
+   * 生成搭配推荐，主路由失败自动重试/切兜底（见 callWithFallback）。
    * @param input 推荐输入（天气 + 衣橱摘要 + 场合）
    * @returns 已过 Zod 校验的推荐结果（itemIds 真实性由上层 pruneRecommend 把关）
-   * @throws RecommendFailedError 重试后仍失败
+   * @throws RecommendFailedError 主备均失败
    */
   async recommend(input: RecommendInput): Promise<RecommendOutput> {
-    const route = this.routes.recommend;
-    const provider = this.providerOf(route);
     try {
-      return await provider.recommend(input, route.model);
-    } catch (first) {
-      this.logger.warn(`推荐失败，重试一次：${String(first)}`);
-      try {
-        return await provider.recommend(input, route.model);
-      } catch (second) {
-        this.logger.error(`推荐重试仍失败：${String(second)}`);
-        throw new RecommendFailedError(second);
-      }
+      return await this.callWithFallback('recommend', (p, model) =>
+        p.recommend(input, model),
+      );
+    } catch (err) {
+      this.logger.error(`推荐主备均失败：${String(err)}`);
+      throw new RecommendFailedError(err);
     }
   }
 
@@ -155,43 +183,34 @@ export class AiService {
     // 无 vision 或 候选为空：直接短路，不调模型，前端降级为手动选
     if (!route.vision) return { itemIds: [] };
     if (input.candidates.length === 0) return { itemIds: [] };
-    const provider = this.providerOf(route);
     try {
-      return await provider.guessOutfitItems(input, route.model);
-    } catch (first) {
-      this.logger.warn(`预猜失败，重试一次：${String(first)}`);
-      try {
-        return await provider.guessOutfitItems(input, route.model);
-      } catch (second) {
-        // 尽力而为：仍失败则空命中降级，不抛错阻塞打卡
-        this.logger.warn(`预猜重试仍失败，降级为手动选：${String(second)}`);
-        return { itemIds: [] };
-      }
+      return await this.callWithFallback('guess', (p, model) =>
+        p.guessOutfitItems(input, model),
+      );
+    } catch (err) {
+      // 尽力而为：主备均失败则空命中降级，不抛错阻塞打卡
+      this.logger.warn(`预猜主备均失败，降级为手动选：${String(err)}`);
+      return { itemIds: [] };
     }
   }
 
   /**
-   * AI 试穿：把整套单品合成到用户全身照上，失败自动重试 1 次（PRD 4.6）。
+   * AI 试穿：把整套单品合成到用户全身照上，主路由失败自动重试/切兜底（PRD 4.6）。
    *
-   * 图像生成不稳定（超时/内容策略拒绝/网关抖动），重试后仍失败则抛错，
+   * 图像生成不稳定（超时/内容策略拒绝/网关抖动），主备均失败则抛错，
    * 上层降级为「试穿失败，请稍后再试」，不阻塞其他功能。
    * @param input 全身照 + 本套单品图 + 可选场合/风格
    * @returns 合成上身图的 base64（不含 data: 前缀）
-   * @throws TryOnFailedError 重试后仍失败
+   * @throws TryOnFailedError 主备均失败
    */
   async tryOn(input: TryOnInput): Promise<string> {
-    const route = this.routes.tryon;
-    const provider = this.providerOf(route);
     try {
-      return await provider.tryOn(input, route.model);
-    } catch (first) {
-      this.logger.warn(`试穿失败，重试一次：${String(first)}`);
-      try {
-        return await provider.tryOn(input, route.model);
-      } catch (second) {
-        this.logger.error(`试穿重试仍失败：${String(second)}`);
-        throw new TryOnFailedError(second);
-      }
+      return await this.callWithFallback('tryon', (p, model) =>
+        p.tryOn(input, model),
+      );
+    } catch (err) {
+      this.logger.error(`试穿主备均失败：${String(err)}`);
+      throw new TryOnFailedError(err);
     }
   }
 }

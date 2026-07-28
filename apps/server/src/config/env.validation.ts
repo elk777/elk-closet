@@ -129,6 +129,24 @@ function validateAiConfig(raw: Record<string, unknown>): string[] {
     if (!model) {
       errors.push(`AI_ROUTE_${ability}__MODEL 不能为空`);
     }
+
+    // ── 兜底路由（可选）：成对出现 + 渠道必须存在 ──
+    const fbChannel = String(raw[`AI_ROUTE_${ability}__FALLBACK_CHANNEL`] ?? '')
+      .trim()
+      .toLowerCase();
+    const fbModel = String(
+      raw[`AI_ROUTE_${ability}__FALLBACK_MODEL`] ?? '',
+    ).trim();
+    if (!!fbChannel !== !!fbModel) {
+      errors.push(
+        `AI_ROUTE_${ability}__FALLBACK_CHANNEL 与 FALLBACK_MODEL 必须成对配置（当前只配了其一）`,
+      );
+    }
+    if (fbChannel && !channelNames.includes(fbChannel)) {
+      errors.push(
+        `AI_ROUTE_${ability}__FALLBACK_CHANNEL 引用了不存在的渠道「${fbChannel}」，可用渠道：${channelNames.join(', ') || '（无）'}`,
+      );
+    }
   }
 
   return errors;

@@ -69,6 +69,12 @@ export interface AiRouteConfig {
   channel: string;
   model: string;
   vision: boolean;
+  /**
+   * 可选兜底路由：主「渠道+模型」失败时切到这里再试一次。
+   * 场景：公益站/中转站上游按模型维度随时失效，主备常为同渠道不同模型。
+   * 兜底模型须具备与主路由同等能力（如 vision），由配置者保证。
+   */
+  fallback?: { channel: string; model: string };
 }
 
 /** 可路由的 AI 能力名 */
@@ -159,13 +165,20 @@ export const aiConfig = registerAs('ai', (): AiConfig => {
   // 渠道字段名 → AiChannelConfig 属性名
   const channelReg = /^AI_CHANNEL_(.+?)__(PROTOCOL|BASE_URL|API_KEY|PROXY)$/;
   const routeReg =
-    /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS|TRYON)__(CHANNEL|MODEL|VISION)$/;
+    /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS|TRYON)__(CHANNEL|MODEL|VISION|FALLBACK_CHANNEL|FALLBACK_MODEL)$/;
 
   const routes: Record<AiAbility, AiRouteConfig> = {
     recognize: { channel: '', model: '', vision: false },
     recommend: { channel: '', model: '', vision: false },
     guess: { channel: '', model: '', vision: false },
     tryon: { channel: '', model: '', vision: false },
+  };
+  // 兜底字段先散收再组装：FALLBACK_CHANNEL/MODEL 两者都非空才算配置了兜底
+  const fallbacks: Record<AiAbility, { channel: string; model: string }> = {
+    recognize: { channel: '', model: '' },
+    recommend: { channel: '', model: '' },
+    guess: { channel: '', model: '' },
+    tryon: { channel: '', model: '' },
   };
 
   for (const [key, rawValue] of Object.entries(process.env)) {
@@ -194,7 +207,16 @@ export const aiConfig = registerAs('ai', (): AiConfig => {
       if (field === 'CHANNEL') rt.channel = value.toLowerCase();
       else if (field === 'MODEL') rt.model = value;
       else if (field === 'VISION') rt.vision = value === 'true';
+      else if (field === 'FALLBACK_CHANNEL')
+        fallbacks[ability].channel = value.toLowerCase();
+      else if (field === 'FALLBACK_MODEL') fallbacks[ability].model = value;
     }
+  }
+
+  // 组装兜底：成对非空才生效（半配置由 validateAiConfig 启动报错，这里不静默取一半）
+  for (const ability of Object.keys(fallbacks) as AiAbility[]) {
+    const fb = fallbacks[ability];
+    if (fb.channel && fb.model) routes[ability].fallback = fb;
   }
 
   return {

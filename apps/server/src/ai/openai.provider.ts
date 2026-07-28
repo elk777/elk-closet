@@ -141,7 +141,9 @@ export class OpenAiProvider implements AiProvider {
   ): Promise<string> {
     const completion = await this.client.chat.completions.create({
       model,
-      max_tokens: 1024,
+      // 推理型模型（国产系普遍）思考链与正文共用预算，1024 会被思考吃光
+      // 致 finish_reason=length、content 为空。与 recommend 对齐给到 4000。
+      max_tokens: 4000,
       // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
       response_format: { type: 'json_object' },
       messages: [
