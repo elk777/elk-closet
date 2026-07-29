@@ -13,6 +13,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  ScreenshotExtractResult,
   TryOnInput,
   TryOnResult,
 } from '@zhiyi/shared';
@@ -21,12 +22,18 @@ import type {
   AiProvider,
   GuessOutfitInput,
   RecognizeInput,
+  ScreenshotExtractInput,
 } from './ai-provider.interface';
 import {
   parseRecognition,
   buildRecognitionSystemPrompt,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
+import {
+  buildScreenshotExtractSystemPrompt,
+  parseScreenshotExtract,
+  SCREENSHOT_EXTRACT_USER_PROMPT,
+} from './screenshot-extract.prompt';
 import {
   buildRecommendUserPrompt,
   parseRecommend,
@@ -71,6 +78,44 @@ export class OpenAiProvider implements AiProvider {
   ): Promise<RecognitionResult> {
     const raw = await this.callModel(input, model);
     return parseRecognition(raw);
+  }
+
+  async extractScreenshot(
+    input: ScreenshotExtractInput,
+    model: string,
+  ): Promise<ScreenshotExtractResult> {
+    // 多张截图同一次调用：同一件商品信息互补（订单页+详情页），矛盾以 prompt 约定裁决
+    const dataUrls = await Promise.all(
+      input.imageUrls.map((u) => this.urlToDataUrl(u)),
+    );
+    const completion = await this.client.chat.completions.create({
+      model,
+      // 与识别对齐：推理模型思考链与正文共用预算
+      max_tokens: 4000,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: buildScreenshotExtractSystemPrompt(input.categories),
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: SCREENSHOT_EXTRACT_USER_PROMPT },
+            ...dataUrls.map((url) => ({
+              type: 'image_url' as const,
+              image_url: { url },
+            })),
+          ],
+        },
+      ],
+    });
+
+    const text = completion.choices[0]?.message?.content;
+    if (!text) {
+      throw new Error('OpenAI 返回中没有文本内容');
+    }
+    return parseScreenshotExtract(text);
   }
 
   async recommend(

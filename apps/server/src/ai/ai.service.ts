@@ -20,6 +20,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  ScreenshotExtractResult,
   TryOnInput,
 } from '@zhiyi/shared';
 import type {
@@ -32,6 +33,7 @@ import {
   type AiProvider,
   type GuessOutfitInput,
   type RecognizeInput,
+  type ScreenshotExtractInput,
 } from './ai-provider.interface';
 
 /** 识别整体失败（含重试）后抛出，供上层走「先存图后补」降级 */
@@ -39,6 +41,15 @@ export class RecognitionFailedError extends Error {
   constructor(cause: unknown) {
     super('AI 识别失败');
     this.name = 'RecognitionFailedError';
+    this.cause = cause;
+  }
+}
+
+/** 截图提取整体失败（含兜底）后抛出，供上层降级为「先存截图稍后补」 */
+export class ScreenshotExtractFailedError extends Error {
+  constructor(cause: unknown) {
+    super('AI 截图提取失败');
+    this.name = 'ScreenshotExtractFailedError';
     this.cause = cause;
   }
 }
@@ -177,6 +188,43 @@ export class AiService {
     } catch (err) {
       this.logger.error(`识别主备均失败：${String(err)}`);
       throw new RecognitionFailedError(err);
+    }
+  }
+
+  /**
+   * 从购物截图提取商品信息（PRD 4.1「从截图/订单导入」）。
+   *
+   * 借用 recognize 的能力路由与主备兜底：两者用同一个多模态模型，单独立
+   * 能力只会复制一遍相同的 env 配置；将来需要独立选型时再拆（配置层已支持）。
+   * @param input 同一件商品的 1~3 张购物截图 + 品类候选集
+   * @returns 已过 Zod 校验的提取结果（字段可为 null，防编造契约）
+   * @throws ScreenshotExtractFailedError 无 vision 能力、截图不可达，或主备均失败
+   */
+  async extractFromScreenshot(
+    input: ScreenshotExtractInput,
+  ): Promise<ScreenshotExtractResult> {
+    const route = this.routes.recognize;
+    if (!route.vision) {
+      throw new ScreenshotExtractFailedError(
+        new Error('识别路由的模型无 vision 能力'),
+      );
+    }
+    // 逐张预检：任一截图不可达，模型读不到就会按 prompt 全 null，不如尽早降级
+    try {
+      await Promise.all(
+        input.imageUrls.map((u) => this.assertImageReachable(u)),
+      );
+    } catch (err) {
+      this.logger.warn(String(err));
+      throw new ScreenshotExtractFailedError(err);
+    }
+    try {
+      return await this.callWithFallback('recognize', (p, model) =>
+        p.extractScreenshot(input, model),
+      );
+    } catch (err) {
+      this.logger.error(`截图提取主备均失败：${String(err)}`);
+      throw new ScreenshotExtractFailedError(err);
     }
   }
 

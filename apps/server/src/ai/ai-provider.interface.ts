@@ -12,6 +12,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  ScreenshotExtractResult,
   TryOnInput,
   TryOnResult,
 } from '@zhiyi/shared';
@@ -48,6 +49,14 @@ export interface RecognizeInput {
    * 品类候选集：来自用户分类表（自定义分类要能被 AI 识别命中，就必须进 prompt）。
    * 缺省时 prompt 回退内置模板 CATEGORIES。
    */
+  categories?: readonly string[];
+}
+
+/** 截图提取入参：同一件商品的 1~3 张购物截图 + 用户品类候选集 */
+export interface ScreenshotExtractInput {
+  /** 截图可公开访问的 URL（对象存储 / CDN），多张信息互补 */
+  imageUrls: string[];
+  /** 品类候选集，语义同 RecognizeInput.categories */
   categories?: readonly string[];
 }
 
@@ -90,6 +99,23 @@ export interface AiProvider {
    * @returns 已过 Zod 校验的结构化识别结果
    */
   recognize(input: RecognizeInput, model: string): Promise<RecognitionResult>;
+
+  /**
+   * 从购物截图提取商品信息（PRD 4.1「从截图/订单导入」）。
+   *
+   * 实现约定：
+   * - 多张截图放同一次 vision 调用（同一件商品，信息互补）
+   * - 强制按 ScreenshotExtractSchema 返回 JSON，返回前过 Zod 校验
+   * - 防编造：读不到的字段为 null（schema 与 prompt 双重约束）
+   *
+   * @param input 购物截图 + 品类候选集
+   * @param model 本次调用使用的模型名（由能力路由传入）
+   * @returns 已过 Zod 校验的提取结果
+   */
+  extractScreenshot(
+    input: ScreenshotExtractInput,
+    model: string,
+  ): Promise<ScreenshotExtractResult>;
 
   /**
    * 生成搭配推荐（PRD 4.5「私人造型师」）。

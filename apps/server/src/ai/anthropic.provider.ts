@@ -13,6 +13,7 @@ import type {
   RecognitionResult,
   RecommendInput,
   RecommendOutput,
+  ScreenshotExtractResult,
   TryOnInput,
 } from '@zhiyi/shared';
 import type {
@@ -20,12 +21,18 @@ import type {
   AiProvider,
   GuessOutfitInput,
   RecognizeInput,
+  ScreenshotExtractInput,
 } from './ai-provider.interface';
 import {
   parseRecognition,
   buildRecognitionSystemPrompt,
   RECOGNITION_USER_PROMPT,
 } from './recognition.prompt';
+import {
+  buildScreenshotExtractSystemPrompt,
+  parseScreenshotExtract,
+  SCREENSHOT_EXTRACT_USER_PROMPT,
+} from './screenshot-extract.prompt';
 import {
   buildRecommendUserPrompt,
   parseRecommend,
@@ -101,6 +108,31 @@ export class AnthropicProvider implements AiProvider {
   ): Promise<RecognitionResult> {
     const raw = await this.callModel(input, model);
     return parseRecognition(raw);
+  }
+
+  async extractScreenshot(
+    input: ScreenshotExtractInput,
+    model: string,
+  ): Promise<ScreenshotExtractResult> {
+    // 多张截图同一次调用（同一件商品信息互补），url source 由 Anthropic 侧抓取
+    const content: Anthropic.ContentBlockParam[] = [
+      { type: 'text', text: SCREENSHOT_EXTRACT_USER_PROMPT },
+      ...input.imageUrls.map(
+        (url): Anthropic.ContentBlockParam => ({
+          type: 'image',
+          source: { type: 'url', url },
+        }),
+      ),
+    ];
+
+    const message = await this.client.messages.create({
+      model,
+      max_tokens: 1024,
+      system: buildScreenshotExtractSystemPrompt(input.categories),
+      messages: [{ role: 'user', content }],
+    });
+
+    return parseScreenshotExtract(this.extractText(message));
   }
 
   async recommend(

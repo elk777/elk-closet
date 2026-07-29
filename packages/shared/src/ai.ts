@@ -62,6 +62,33 @@ export type RecognitionResult = z.infer<typeof RecognitionResultSchema>;
 export const RECOGNITION_CONFIDENCE_THRESHOLD = 0.75;
 
 /* ============================================================
+   能力一之二：购物截图提取
+   ============================================================ */
+
+/**
+ * 截图提取输出契约。
+ *
+ * 与识别的本质区别：识别是「看衣服猜属性」（字段必填），提取是
+ * 「读订单/商品页 UI 抄字段」——读不到的字段必须为 null，禁止编造。
+ * 全 nullable 是 schema 级的防编造约束，与 prompt 双保险。
+ */
+export const ScreenshotExtractSchema = z.object({
+  /** 商品标题（可整理为适合衣橱展示的短名） */
+  name: z.string().min(1).nullable(),
+  /** 品牌 */
+  brand: z.string().min(1).nullable(),
+  /** 价格（元），实付价优先、原价兜底 */
+  price: z.number().min(0).nullable(),
+  /** 颜色（订单规格/商品描述中的颜色文案） */
+  mainColor: z.string().min(1).nullable(),
+  /** 品类猜测：候选集同识别（用户分类表），命中判断在后端 service */
+  categoryGuess: z.string().min(1).nullable(),
+  /** AI 自评整体置信度 0~1 */
+  confidence: z.number().min(0).max(1),
+});
+export type ScreenshotExtractResult = z.infer<typeof ScreenshotExtractSchema>;
+
+/* ============================================================
    能力二：搭配推荐
    ============================================================ */
 
