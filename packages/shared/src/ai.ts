@@ -83,6 +83,21 @@ export const ScreenshotExtractSchema = z.object({
   mainColor: z.string().min(1).nullable(),
   /** 品类猜测：候选集同识别（用户分类表），命中判断在后端 service */
   categoryGuess: z.string().min(1).nullable(),
+  /**
+   * 第一张截图中商品展示图的区域（归一化 0~1，相对整图）：
+   * 服务端据此裁出干净商品图当主图，免整张订单截图当封面的噪音。
+   * 模型定位不准时为 null——nullable 兜底与其余字段同理，宁缺勿错。
+   */
+  imageBox: z
+    .object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0).max(1),
+      h: z.number().min(0).max(1),
+    })
+    .nullable()
+    // bbox 是锦上添花：模型漏字段/坐标非法时按 null 兜底，绝不拖垮字段提取
+    .catch(null),
   /** AI 自评整体置信度 0~1 */
   confidence: z.number().min(0).max(1),
 });

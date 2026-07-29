@@ -31,7 +31,8 @@ export function buildScreenshotExtractSystemPrompt(
 6. categoryGuess 从白名单中选：${categories.join(' / ')}；无法判断填 null。
 7. 多张截图属于同一件商品，信息互补时合并；互相矛盾时以订单页为准。
 8. 如果截图不是购物页面、或无法查看图片：所有字段填 null，confidence 填 0。
-9. confidence 为你对本次提取的整体自评置信度，0~1 的小数。
+9. imageBox 为**第一张截图**中商品展示图（商品照片本身）所在的矩形区域，坐标与宽高均为相对整张截图的 0~1 归一化小数（x/y 为左上角）。只框商品照片，不要框按钮、logo、店铺头像、文字区域；第一张截图里没有商品照片、或位置拿不准时填 null，禁止乱框。
+10. confidence 为你对本次提取的整体自评置信度，0~1 的小数。
 
 返回字段：
 {
@@ -40,6 +41,7 @@ export function buildScreenshotExtractSystemPrompt(
   "price": 299.5,
   "mainColor": "雾霾蓝 或 null",
   "categoryGuess": "外套 或 null",
+  "imageBox": { "x": 0.05, "y": 0.12, "w": 0.28, "h": 0.2 },
   "confidence": 0.9
 }`;
 }

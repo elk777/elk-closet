@@ -9,7 +9,8 @@
  * - 查询一律过滤软删除（deletedAt 为 null）
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import sharp from 'sharp';
 import {
   majorTypeOf,
   type RecognitionResult,
@@ -18,6 +19,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { CategoryService, FALLBACK_CATEGORY } from '../category/category.service';
+import { UploadService } from '../upload/upload.service';
 import type { CreateGarmentDto } from './dto/create-garment.dto';
 
 /** 先存图后补时，缺省属性的兜底值（PRD 5.6.1：不阻塞录入）；品类兜底见 FALLBACK_CATEGORY */
@@ -32,10 +34,13 @@ const FALLBACK = {
 
 @Injectable()
 export class GarmentService {
+  private readonly logger = new Logger(GarmentService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
     private readonly categories: CategoryService,
+    private readonly upload: UploadService,
   ) {}
 
   /**
@@ -70,23 +75,86 @@ export class GarmentService {
    * 品类候选集注入与识别一致；categoryGuess 未命中用户分类集时置 null
    * （提取契约允许 null，前端留空由用户自选，不强行归「其他」——
    * 截图场景下模型对品类的判断依据远弱于实物图，宁缺勿错）。
+   * 提取成功后再尝试按模型给的 imageBox 裁出干净商品图当主图；
+   * 裁剪是锦上添花，任何一步失败只影响 croppedImageUrl（置 null），不影响字段结果。
    * @param ownerId 当前登录用户 id
    * @param imageUrls 又拍云直传后的截图 URL（1~3 张）
-   * @returns 已过 Zod 校验、品类已按用户集裁剪的提取结果
+   * @returns 提取结果 + 裁出的商品图 URL（裁不出为 null，前端回退整张截图）
    */
   async extractScreenshot(
     ownerId: string,
     imageUrls: string[],
-  ): Promise<ScreenshotExtractResult> {
+  ): Promise<{
+    result: ScreenshotExtractResult;
+    croppedImageUrl: string | null;
+  }> {
     const { names } = await this.categories.namesOf(ownerId);
-    const result = await this.ai.extractFromScreenshot({
+    let result = await this.ai.extractFromScreenshot({
       imageUrls,
       categories: names,
     });
     if (result.categoryGuess && !names.includes(result.categoryGuess)) {
-      return { ...result, categoryGuess: null };
+      result = { ...result, categoryGuess: null };
     }
-    return result;
+    const croppedImageUrl = await this.cropProductImage(
+      ownerId,
+      imageUrls[0],
+      result.imageBox,
+    );
+    return { result, croppedImageUrl };
+  }
+
+  /**
+   * 按模型定位的归一化 bbox 从第一张截图裁出商品图并上传。
+   *
+   * 模型 bbox 精度未知：sanity check（区域不出图、宽高在 (0.1, 1] 内——
+   * 过小多半框了缩略图/图标）+ 全链路 catch 兜底 null，保证最坏情况
+   * 等于现状（整张截图当主图），不会更差。
+   * @param ownerId 归属用户 id（上传目录隔离）
+   * @param imageUrl 第一张截图 URL
+   * @param box 模型给的归一化区域；null 直接跳过
+   * @returns 裁剪产物 URL；bbox 不合理或下载/裁剪/上传失败时为 null
+   */
+  private async cropProductImage(
+    ownerId: string,
+    imageUrl: string,
+    box: ScreenshotExtractResult['imageBox'],
+  ): Promise<string | null> {
+    if (!box) return null;
+    if (
+      box.w <= 0.1 ||
+      box.w > 1 ||
+      box.h <= 0.1 ||
+      box.h > 1 ||
+      box.x + box.w > 1 ||
+      box.y + box.h > 1
+    ) {
+      this.logger.warn(`商品图 bbox 未过 sanity check，跳过裁剪：${JSON.stringify(box)}`);
+      return null;
+    }
+    try {
+      const resp = await fetch(imageUrl, { signal: AbortSignal.timeout(10000) });
+      if (!resp.ok) throw new Error(`截图下载响应 ${resp.status}`);
+      const source = Buffer.from(await resp.arrayBuffer());
+
+      const meta = await sharp(source).metadata();
+      const { width, height } = meta;
+      if (!width || !height) throw new Error('读不到截图尺寸');
+      // 归一化 → 像素：四舍五入后 clamp 进图内，防浮点误差把 extract 顶出边界
+      const left = Math.min(Math.round(box.x * width), width - 1);
+      const top = Math.min(Math.round(box.y * height), height - 1);
+      const cropWidth = Math.min(Math.round(box.w * width), width - left);
+      const cropHeight = Math.min(Math.round(box.h * height), height - top);
+
+      const cropped = await sharp(source)
+        .extract({ left, top, width: cropWidth, height: cropHeight })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      return await this.upload.putImage(ownerId, cropped, 'garments', 'jpg');
+    } catch (err) {
+      this.logger.warn(`商品图裁剪失败，回退整张截图：${String(err)}`);
+      return null;
+    }
   }
 
   /**

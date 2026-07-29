@@ -58,7 +58,7 @@ export class GarmentController {
    * 「先存截图稍后补」，不阻塞录入。
    * @param user 当前登录用户（品类候选集按其分类表拼装）
    * @param dto 已上传的截图 URL（1~3 张）
-   * @returns 提取结果（字段可为 null），或失败标记
+   * @returns 提取结果（字段可为 null）+ 裁出的商品图 URL（裁不出为 null），或失败标记
    */
   @Post('extract-screenshot')
   async extractScreenshot(
@@ -66,11 +66,9 @@ export class GarmentController {
     @Body() dto: ExtractScreenshotDto,
   ) {
     try {
-      const result = await this.garments.extractScreenshot(
-        user.id,
-        dto.imageUrls,
-      );
-      return { extracted: true, result };
+      const { result, croppedImageUrl } =
+        await this.garments.extractScreenshot(user.id, dto.imageUrls);
+      return { extracted: true, result, croppedImageUrl };
     } catch {
       return {
         extracted: false,

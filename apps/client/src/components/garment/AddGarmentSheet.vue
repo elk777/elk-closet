@@ -54,7 +54,12 @@ async function pickScreenshotsAndExtract() {
   fromScreenshot.value = true;
   // 主图先用第一张截图顶着（先囫囵存进去），详情页引导之后补实物图
   imageUrl.value = urls[0];
-  const result = await extract(urls);
+  const extracted = await extract(urls);
+  // 服务端裁出了干净商品图则替换主图（仍非实物图，pendingPhoto 语义不变）
+  if (extracted?.croppedImageUrl) {
+    imageUrl.value = extracted.croppedImageUrl;
+  }
+  const result = extracted?.result;
   form.value = result
     ? {
         // 读不到的字段为 null：转 undefined 留空，让用户自填而非提交空串

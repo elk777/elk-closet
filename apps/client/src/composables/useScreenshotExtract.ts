@@ -25,11 +25,13 @@ export function useScreenshotExtract() {
   /**
    * 从已上传的购物截图提取商品信息。
    * @param imageUrls 又拍云截图 URL（1~3 张，同一件商品）
-   * @returns 提取结果（字段可为 null）；失败返回 null（走先存截图稍后补）
+   * @returns 提取结果（字段可为 null）+ 裁出的商品图 URL（裁不出为 null）；
+   *          失败返回 null（走先存截图稍后补）
    */
-  async function extract(
-    imageUrls: string[],
-  ): Promise<ScreenshotExtractResult | null> {
+  async function extract(imageUrls: string[]): Promise<{
+    result: ScreenshotExtractResult;
+    croppedImageUrl: string | null;
+  } | null> {
     extracting.value = true;
     lowConfidence.value = false;
     extractingHint.value = 'AI 正在读取截图…';
@@ -42,7 +44,7 @@ export function useScreenshotExtract() {
       if (!res.extracted) return null;
       lowConfidence.value =
         res.result.confidence < RECOGNITION_CONFIDENCE_THRESHOLD;
-      return res.result;
+      return { result: res.result, croppedImageUrl: res.croppedImageUrl };
     } catch (e) {
       // 网络异常等静默兜底：不弹错误，返回 null 让页面走「先存截图稍后补」
       return null;

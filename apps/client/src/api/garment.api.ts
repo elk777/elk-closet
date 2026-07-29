@@ -49,11 +49,16 @@ export function recognizeGarment(imageUrl: string) {
 
 /**
  * 截图提取响应：降级哲学与识别一致，用 extracted 标记成败。
- * - extracted=true 时带 result（字段可为 null——读不到不编造）
+ * - extracted=true 时带 result（字段可为 null——读不到不编造）与
+ *   croppedImageUrl（服务端按模型 bbox 裁出的商品图；裁不出为 null，回退整张截图）
  * - extracted=false 时仅带 message，前端走「先存截图稍后补」
  */
 export type ExtractScreenshotResponse =
-  | { extracted: true; result: ScreenshotExtractResult }
+  | {
+      extracted: true;
+      result: ScreenshotExtractResult;
+      croppedImageUrl: string | null;
+    }
   | { extracted: false; message: string };
 
 /**
