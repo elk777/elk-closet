@@ -21,6 +21,11 @@
         />
       </view>
 
+      <!-- 截图导入的衣物：主图还是购物截图，提示补一张实物图 -->
+      <view v-if="pendingPhoto" class="pending-tip">
+        <text>当前主图是购物截图，拍一张实物图会更好认哦</text>
+      </view>
+
       <view class="stats">
         <view class="stat">
           <text class="stat__num">{{ garment.wearCount }}</text>
@@ -119,6 +124,11 @@ const garment = ref<Garment | null>(null);
 const loading = ref(true);
 const acting = ref(false);
 let garmentId = '';
+
+/** 待补实物图：截图导入入库时 extra 里种的标记（编辑改图能力落地后引导替换） */
+const pendingPhoto = computed(
+  () => garment.value?.extra?.pendingPhoto === true,
+);
 
 /** 单次成本文案：无价格或没穿过时显示占位（不误导） */
 const costText = computed(() => {
@@ -225,6 +235,15 @@ onLoad((query) => {
   width: 100%;
   height: 480rpx;
   background: $zy-bg;
+}
+.pending-tip {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: $zy-radius-sm;
+  background: rgba(230, 162, 60, 0.1);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b8863b;
 }
 .stats {
   display: flex;
