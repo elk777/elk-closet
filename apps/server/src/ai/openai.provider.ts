@@ -139,6 +139,10 @@ export class OpenAiProvider implements AiProvider {
     input: RecognizeInput,
     model: string,
   ): Promise<string> {
+    // 传 base64 而非外链：部分网关上游（如 42w，2026-07-29 起）拒收 URL 形态的
+    // image_url；data URL 是 OpenAI vision 协议标准形态，各渠道通吃，
+    // 也免去模型侧再抓一次图的不确定性。
+    const imageDataUrl = await this.urlToDataUrl(input.imageUrl);
     const completion = await this.client.chat.completions.create({
       model,
       // 推理型模型（国产系普遍）思考链与正文共用预算，1024 会被思考吃光
@@ -152,7 +156,7 @@ export class OpenAiProvider implements AiProvider {
           role: 'user',
           content: [
             { type: 'text', text: RECOGNITION_USER_PROMPT },
-            { type: 'image_url', image_url: { url: input.imageUrl } },
+            { type: 'image_url', image_url: { url: imageDataUrl } },
           ],
         },
       ],
@@ -201,6 +205,21 @@ export class OpenAiProvider implements AiProvider {
       return Buffer.from(await resp.arrayBuffer()).toString('base64');
     }
     throw new Error('图像模型既未返回 b64_json 也未返回 url');
+  }
+
+  /**
+   * 抓取图片 URL 转成 data URL（base64），供 vision 消息内联传图。
+   * 图片 URL 是又拍云公开 CDN，直连抓取（不走渠道代理）。
+   * @param url 公开可访问的图片 URL
+   */
+  private async urlToDataUrl(url: string): Promise<string> {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    if (!resp.ok) {
+      throw new Error(`抓取识别图失败(${resp.status})：${url}`);
+    }
+    const type = resp.headers.get('content-type') ?? 'image/jpeg';
+    const b64 = Buffer.from(await resp.arrayBuffer()).toString('base64');
+    return `data:${type};base64,${b64}`;
   }
 
   /**
