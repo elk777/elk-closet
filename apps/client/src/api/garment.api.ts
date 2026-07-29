@@ -67,9 +67,13 @@ export type ExtractScreenshotResponse =
  * @returns 提取响应信封（成败由 extracted 标记）
  */
 export function extractScreenshot(imageUrls: string[]) {
-  return http.post<ExtractScreenshotResponse>('/garments/extract-screenshot', {
-    imageUrls,
-  });
+  return http.post<ExtractScreenshotResponse>(
+    '/garments/extract-screenshot',
+    { imageUrls },
+    // 主模型失败切兜底(慢模型)+ 服务端裁剪上传,全链路实测可达 2 分半,
+    // 全局 60s 会在后端仍在跑时误报失败,与后端 AI_TIMEOUT_MS(180s)对齐
+    { timeout: 180000 },
+  );
 }
 
 /** 创建衣物 */
