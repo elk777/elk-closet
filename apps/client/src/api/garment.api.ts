@@ -2,7 +2,11 @@
  * 衣物相关接口。
  */
 
-import type { Garment, RecognitionResult } from '@zhiyi/shared';
+import type {
+  Garment,
+  RecognitionResult,
+  ScreenshotExtractResult,
+} from '@zhiyi/shared';
 import { http } from './request';
 
 /** 创建衣物入参：图必填，属性可缺省（先存图后补） */
@@ -21,6 +25,8 @@ export interface CreateGarmentPayload {
   styleTags?: string[];
   brand?: string;
   price?: number;
+  /** 附加信息（JSONB）：截图导入写 { source:'screenshot', pendingPhoto:true } */
+  extra?: Record<string, unknown>;
 }
 
 /**
@@ -39,6 +45,26 @@ export type RecognizeResponse =
  */
 export function recognizeGarment(imageUrl: string) {
   return http.post<RecognizeResponse>('/garments/recognize', { imageUrl });
+}
+
+/**
+ * 截图提取响应：降级哲学与识别一致，用 extracted 标记成败。
+ * - extracted=true 时带 result（字段可为 null——读不到不编造）
+ * - extracted=false 时仅带 message，前端走「先存截图稍后补」
+ */
+export type ExtractScreenshotResponse =
+  | { extracted: true; result: ScreenshotExtractResult }
+  | { extracted: false; message: string };
+
+/**
+ * 从购物截图提取商品信息（不入库，供确认页预填）。
+ * @param imageUrls 又拍云截图 URL（1~3 张，同一件商品）
+ * @returns 提取响应信封（成败由 extracted 标记）
+ */
+export function extractScreenshot(imageUrls: string[]) {
+  return http.post<ExtractScreenshotResponse>('/garments/extract-screenshot', {
+    imageUrls,
+  });
 }
 
 /** 创建衣物 */

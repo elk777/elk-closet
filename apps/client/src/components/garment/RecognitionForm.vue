@@ -20,11 +20,15 @@ import { fetchCategoriesCached } from '../../api/category.api';
 import AppTag from '../base/AppTag.vue';
 
 /**
- * 录入草稿：AI 识别属性 + 用户手填的名称。
- * name 属于衣物属性而非识别契约（AI 不产出名称），故在草稿层并入，
- * 供确认表单编辑、最终随 createGarment 一并入库。
+ * 录入草稿：AI 识别/提取属性 + 用户手填的名称、品牌、价格。
+ * name/brand/price 属于衣物属性而非识别契约（拍照识别不产出，截图提取会预填），
+ * 故在草稿层并入，供确认表单编辑、最终随 createGarment 一并入库。
  */
-export type GarmentDraft = Partial<RecognitionResult> & { name?: string };
+export type GarmentDraft = Partial<RecognitionResult> & {
+  name?: string;
+  brand?: string;
+  price?: number;
+};
 
 interface Props {
   /** 识别结果草稿；为 null 表示识别失败，字段留空待用户手动补 */
@@ -41,6 +45,12 @@ const form = computed<GarmentDraft>(() => props.modelValue ?? {});
 /** 更新单个字段并同步 v-model */
 function patch(key: keyof GarmentDraft, value: unknown) {
   emit('update:modelValue', { ...form.value, [key]: value });
+}
+
+/** 价格输入：后端要求非负整数，四舍五入；清空/非法输入回退为未填 */
+function patchPrice(raw: string) {
+  const n = Math.round(Number(raw));
+  patch('price', raw !== '' && Number.isFinite(n) && n >= 0 ? n : undefined);
 }
 
 /** 品类改变时联动大类，保证两者一致（自定义分类的归属只有用户分类表知道） */
@@ -151,6 +161,27 @@ const formalities = FORMALITY;
         :value="form.material ?? ''"
         placeholder="如 羊毛混纺"
         @input="patch('material', ($event.target as HTMLInputElement).value)"
+      />
+    </view>
+
+    <!-- 品牌 + 价格：截图导入预填的核心字段（价格打通单次成本） -->
+    <view class="rf-field">
+      <text class="rf-label">品牌</text>
+      <input
+        class="rf-input"
+        :value="form.brand ?? ''"
+        placeholder="如 优衣库（可不填）"
+        @input="patch('brand', ($event.target as HTMLInputElement).value)"
+      />
+    </view>
+    <view class="rf-field">
+      <text class="rf-label">价格（元）</text>
+      <input
+        class="rf-input"
+        type="number"
+        :value="form.price != null ? String(form.price) : ''"
+        placeholder="用于算单次成本（可不填）"
+        @input="patchPrice(($event.target as HTMLInputElement).value)"
       />
     </view>
 
