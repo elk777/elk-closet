@@ -10,7 +10,11 @@
  */
 
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { majorTypeOf, type RecognitionResult } from '@zhiyi/shared';
+import {
+  majorTypeOf,
+  type RecognitionResult,
+  type ScreenshotExtractResult,
+} from '@zhiyi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { CategoryService, FALLBACK_CATEGORY } from '../category/category.service';
@@ -61,6 +65,31 @@ export class GarmentService {
   }
 
   /**
+   * 从购物截图提取商品信息，不入库——供录入确认页预填（PRD 4.1 截图导入）。
+   *
+   * 品类候选集注入与识别一致；categoryGuess 未命中用户分类集时置 null
+   * （提取契约允许 null，前端留空由用户自选，不强行归「其他」——
+   * 截图场景下模型对品类的判断依据远弱于实物图，宁缺勿错）。
+   * @param ownerId 当前登录用户 id
+   * @param imageUrls 又拍云直传后的截图 URL（1~3 张）
+   * @returns 已过 Zod 校验、品类已按用户集裁剪的提取结果
+   */
+  async extractScreenshot(
+    ownerId: string,
+    imageUrls: string[],
+  ): Promise<ScreenshotExtractResult> {
+    const { names } = await this.categories.namesOf(ownerId);
+    const result = await this.ai.extractFromScreenshot({
+      imageUrls,
+      categories: names,
+    });
+    if (result.categoryGuess && !names.includes(result.categoryGuess)) {
+      return { ...result, categoryGuess: null };
+    }
+    return result;
+  }
+
+  /**
    * 创建衣物。缺省属性用兜底值补齐，支持「先存图后补」。
    *
    * 品类按用户分类表校验：未命中不报错而是归「其他」——与 AI 识别兜底策略
@@ -91,7 +120,7 @@ export class GarmentService {
         seasons: dto.seasons ?? [...FALLBACK.seasons],
         formality: dto.formality ?? FALLBACK.formality,
         styleTags: dto.styleTags ?? [],
-        extra: {},
+        extra: (dto.extra ?? {}) as object,
         originalImageUrl: dto.originalImageUrl,
         cutoutImageUrl: dto.cutoutImageUrl ?? null,
         brand: dto.brand ?? null,

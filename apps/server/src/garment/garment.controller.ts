@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { User } from '../prisma/client';
 import { CreateGarmentDto } from './dto/create-garment.dto';
+import { ExtractScreenshotDto } from './dto/extract-screenshot.dto';
 import { RecognizeGarmentDto } from './dto/recognize-garment.dto';
 import { SetArchivedDto } from './dto/set-archived.dto';
 import { GarmentService } from './garment.service';
@@ -46,6 +47,34 @@ export class GarmentController {
       return {
         recognized: false,
         message: '识别失败，可先存图稍后补充属性',
+      };
+    }
+  }
+
+  /**
+   * 从购物截图提取商品信息，不入库（供确认页预填，PRD 4.1 截图导入）。
+   *
+   * 降级哲学与识别一致：提取失败返回 extracted=false，前端走
+   * 「先存截图稍后补」，不阻塞录入。
+   * @param user 当前登录用户（品类候选集按其分类表拼装）
+   * @param dto 已上传的截图 URL（1~3 张）
+   * @returns 提取结果（字段可为 null），或失败标记
+   */
+  @Post('extract-screenshot')
+  async extractScreenshot(
+    @CurrentUser() user: User,
+    @Body() dto: ExtractScreenshotDto,
+  ) {
+    try {
+      const result = await this.garments.extractScreenshot(
+        user.id,
+        dto.imageUrls,
+      );
+      return { extracted: true, result };
+    } catch {
+      return {
+        extracted: false,
+        message: '没读出商品信息，可先存截图稍后补充',
       };
     }
   }

@@ -23,6 +23,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -108,4 +109,12 @@ export class CreateGarmentDto {
   @IsInt()
   @Min(0)
   price?: number;
+
+  /**
+   * 附加信息，落 JSONB。截图导入用它标记来源与「待补实物图」
+   * （{ source:'screenshot', pendingPhoto:true }），避免为一个标记加列
+   */
+  @IsOptional()
+  @IsObject()
+  extra?: Record<string, unknown>;
 }
