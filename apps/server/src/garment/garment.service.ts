@@ -32,6 +32,9 @@ const FALLBACK = {
   formality: '日常',
 } as const;
 
+/** 商品图裁剪的最小边长（像素）：低于此值多半框到了缩略图/图标而非商品主图 */
+const MIN_CROP_PX = 200;
+
 @Injectable()
 export class GarmentService {
   private readonly logger = new Logger(GarmentService.name);
@@ -105,11 +108,11 @@ export class GarmentService {
   }
 
   /**
-   * 按模型定位的归一化 bbox 从第一张截图裁出商品图并上传。
+   * 按模型定位的归一化 bbox 从第一张截图裁出衣服图并上传。
    *
-   * 模型 bbox 精度未知：sanity check（区域不出图、宽高在 (0.1, 1] 内——
-   * 过小多半框了缩略图/图标）+ 全链路 catch 兜底 null，保证最坏情况
-   * 等于现状（整张截图当主图），不会更差。
+   * 模型 bbox 精度未知：sanity check（区域不出图 + 裁后边长不低于
+   * MIN_CROP_PX）+ 全链路 catch 兜底 null，保证最坏情况等于现状
+   * （整张截图当主图），不会更差。
    * @param ownerId 归属用户 id（上传目录隔离）
    * @param imageUrl 第一张截图 URL
    * @param box 模型给的归一化区域；null 直接跳过
@@ -121,14 +124,7 @@ export class GarmentService {
     box: ScreenshotExtractResult['imageBox'],
   ): Promise<string | null> {
     if (!box) return null;
-    if (
-      box.w <= 0.1 ||
-      box.w > 1 ||
-      box.h <= 0.1 ||
-      box.h > 1 ||
-      box.x + box.w > 1 ||
-      box.y + box.h > 1
-    ) {
+    if (box.w <= 0 || box.h <= 0 || box.x + box.w > 1 || box.y + box.h > 1) {
       this.logger.warn(`商品图 bbox 未过 sanity check，跳过裁剪：${JSON.stringify(box)}`);
       return null;
     }
@@ -140,6 +136,14 @@ export class GarmentService {
       const meta = await sharp(source).metadata();
       const { width, height } = meta;
       if (!width || !height) throw new Error('读不到截图尺寸');
+      // 门槛按像素而非比例：紧裁到衣服后框本就不大，长截图（如 1280x2781）
+      // 里合理的框高占比可能不足 10%，比例门槛会误杀
+      if (box.w * width < MIN_CROP_PX || box.h * height < MIN_CROP_PX) {
+        this.logger.warn(
+          `商品图 bbox 过小（疑似框到缩略图/图标），跳过裁剪：${JSON.stringify(box)}`,
+        );
+        return null;
+      }
       // 归一化 → 像素：四舍五入后 clamp 进图内，防浮点误差把 extract 顶出边界
       const left = Math.min(Math.round(box.x * width), width - 1);
       const top = Math.min(Math.round(box.y * height), height - 1);
