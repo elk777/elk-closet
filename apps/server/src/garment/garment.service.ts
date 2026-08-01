@@ -35,6 +35,33 @@ const FALLBACK = {
 /** 商品图裁剪的最小边长（像素）：低于此值多半框到了缩略图/图标而非商品主图 */
 const MIN_CROP_PX = 200;
 
+/**
+ * 横向外扩比例（相对 bbox 自身宽度）。
+ *
+ * 模型给的框普遍偏紧，仅靠 prompt 收紧治不住（已试两轮）：实测一张商品详情图，
+ * 衣服左袖最外侧 204px 而模型框左边界 205px，齐边压线会切掉袖子边缘。
+ * 横向两侧多是背景（天空/地面），多带一点远好过袖子被截断。
+ */
+const CROP_PAD_RATIO_X = 0.08;
+
+/**
+ * 纵向外扩比例：刻意为 0。
+ *
+ * 与横向的处境不同——长截图里衣服上方紧贴模特下巴、下方紧跟缩略图条与价格文字，
+ * 纵向本就没有可扩的余量。实测按横向同比例扩会把下巴和缩略图条一起框进来，
+ * 故纵向一律信任模型的上下边界，只在横向兜底。
+ */
+const CROP_PAD_RATIO_Y = 0;
+
+/**
+ * 上边界向内收缩比例（相对 bbox 自身高度）。
+ *
+ * prompt 已要求「不要框进模特的头和脸」，但模型并未完全遵守：实测返回的
+ * y=0.19（528px）本身就含下巴。纵向不扩仍会带进脸的下缘，故上边反向内收一点，
+ * 宁可切掉一线立领也不要留半个下巴——封面图里五官比衣领完整度更刺眼。
+ */
+const TOP_INSET_RATIO = 0.04;
+
 @Injectable()
 export class GarmentService {
   private readonly logger = new Logger(GarmentService.name);
@@ -112,7 +139,8 @@ export class GarmentService {
    *
    * 模型 bbox 精度未知：sanity check（区域不出图 + 裁后边长不低于
    * MIN_CROP_PX）+ 全链路 catch 兜底 null，保证最坏情况等于现状
-   * （整张截图当主图），不会更差。
+   * （整张截图当主图），不会更差。实际裁剪分轴微调 bbox：横向外扩抵消模型
+   * 框偏紧导致的袖子截断，纵向信任模型并把上边内收避开模特下巴（见各常量注释）。
    * @param ownerId 归属用户 id（上传目录隔离）
    * @param imageUrl 第一张截图 URL
    * @param box 模型给的归一化区域；null 直接跳过
@@ -144,11 +172,28 @@ export class GarmentService {
         );
         return null;
       }
-      // 归一化 → 像素：四舍五入后 clamp 进图内，防浮点误差把 extract 顶出边界
-      const left = Math.min(Math.round(box.x * width), width - 1);
-      const top = Math.min(Math.round(box.y * height), height - 1);
-      const cropWidth = Math.min(Math.round(box.w * width), width - left);
-      const cropHeight = Math.min(Math.round(box.h * height), height - top);
+      // 归一化 → 像素：横向外扩兜底偏紧的框、纵向信任模型并把上边内收（见常量注释）；
+      // 全程 clamp 进图内，防外扩/浮点误差把 extract 顶出边界
+      const boxPxWidth = box.w * width;
+      const boxPxHeight = box.h * height;
+      const padX = boxPxWidth * CROP_PAD_RATIO_X;
+      const padY = boxPxHeight * CROP_PAD_RATIO_Y;
+      const left = Math.min(
+        Math.round(Math.max(0, box.x * width - padX)),
+        width - 1,
+      );
+      const top = Math.min(
+        Math.round(
+          Math.max(0, box.y * height - padY + boxPxHeight * TOP_INSET_RATIO),
+        ),
+        height - 1,
+      );
+      const right = Math.round(Math.min(width, (box.x + box.w) * width + padX));
+      const bottom = Math.round(
+        Math.min(height, (box.y + box.h) * height + padY),
+      );
+      const cropWidth = Math.min(Math.max(right - left, 1), width - left);
+      const cropHeight = Math.min(Math.max(bottom - top, 1), height - top);
 
       const cropped = await sharp(source)
         .extract({ left, top, width: cropWidth, height: cropHeight })
