@@ -76,11 +76,86 @@ export function useUpload() {
     }
   }
 
+  /**
+   * 只选图不上传，供调用方按张数分流后再决定上传策略。
+   *
+   * 单张走原有整体流程、多张走批次逐张独立成败，两者上传语义不同，
+   * 故必须先知道张数才能选路。
+   * @param count 最多可选张数
+   * @returns 选中的本地临时路径（用户取消返回空数组）
+   */
+  async function chooseOnly(count: number): Promise<string[]> {
+    const files = await chooseImage(count);
+    return files.map((f) => f.path);
+  }
+
+  /**
+   * 上传一张已选中的图（失败弹提示）。
+   * @param localPath 本地临时路径
+   * @param resourceType 资源类型（缺省衣物图）
+   * @returns 成功返回 { imageUrl }；失败返回 null
+   */
+  async function uploadOne(
+    localPath: string,
+    resourceType?: UploadResourceType,
+  ): Promise<{ imageUrl: string } | null> {
+    uploading.value = true;
+    progress.value = 0;
+    try {
+      const sign = await signUpload(extractExt(localPath), resourceType);
+      await uploadToUpyun(sign, localPath, (p) => (progress.value = p));
+      return { imageUrl: sign.imageUrl };
+    } catch {
+      useToast().error('图片上传失败，请重试');
+      return null;
+    } finally {
+      uploading.value = false;
+    }
+  }
+
+  /**
+   * 逐张上传已选中的多张图，每张成败立即回调（连拍批次录入）。
+   *
+   * 与 chooseAndUploadMany 的区别在成败粒度：批次里每件衣物互不相干，
+   * 一张传失败只该拖累它自己，其余照常入橱（PRD「先囫囵存进去」）。
+   * @param localPaths 本地临时路径列表
+   * @param onEach 每张的结果回调；imageUrl 为 null 表示该张上传失败
+   * @param resourceType 资源类型（缺省衣物图）
+   */
+  async function uploadEach(
+    localPaths: string[],
+    onEach: (result: { localPath: string; imageUrl: string | null }) => void,
+    resourceType?: UploadResourceType,
+  ): Promise<void> {
+    uploading.value = true;
+    progress.value = 0;
+    try {
+      for (let i = 0; i < localPaths.length; i++) {
+        const localPath = localPaths[i];
+        try {
+          const sign = await signUpload(extractExt(localPath), resourceType);
+          await uploadToUpyun(sign, localPath, (p) => {
+            progress.value = Math.round((i * 100 + p) / localPaths.length);
+          });
+          onEach({ localPath, imageUrl: sign.imageUrl });
+        } catch {
+          // 单张失败不中断整批，也不弹错误：批次列表上会标出该项状态
+          onEach({ localPath, imageUrl: null });
+        }
+      }
+    } finally {
+      uploading.value = false;
+    }
+  }
+
   return {
     uploading,
     progress,
     chooseAndUpload,
     chooseAndUploadMany,
+    chooseOnly,
+    uploadOne,
+    uploadEach,
   };
 }
 
