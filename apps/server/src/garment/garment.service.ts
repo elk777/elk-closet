@@ -10,6 +10,8 @@
  */
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { dirname, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import {
   majorTypeOf,
@@ -31,6 +33,74 @@ const FALLBACK = {
   seasons: ['春', '夏', '秋', '冬'],
   formality: '日常',
 } as const;
+
+/** 抠图开关：默认开启，AI_CUTOUT_ENABLED=false 时一键停用（降级为回退原图，不阻塞录入） */
+const CUTOUT_ENABLED = process.env.AI_CUTOUT_ENABLED !== 'false';
+
+/** 抠图后前景占比的合理区间（alpha 均值 / 255 近似）：过小=没抠到主体，过大=没抠掉背景，均判失败 */
+const CUTOUT_FG_MIN = 0.03;
+const CUTOUT_FG_MAX = 0.98;
+
+/** 判定单条边缘窄带「干净」的阈值：平均亮度够高且方差够小 */
+const CLEAN_BG_MIN_MEAN = 240;
+const CLEAN_BG_MAX_STDEV = 25;
+/** 四条边中至少多少条干净即认为整体背景干净（放过只压住一条边的水印/角标） */
+const CLEAN_BG_MIN_BANDS = 3;
+/** 采样的边缘窄带占短边的比例 */
+const CLEAN_BG_BAND_RATIO = 0.06;
+
+/**
+ * 判断原图背景是否已经足够干净（近白底），此时抠图无收益、反而有害。
+ *
+ * 起因（2026-08-04 实测）：近白底商品图上的品牌水印，模型时而抹净、时而当半透明
+ * 前景糊成一片灰色残影，比原图更差，而抠图后的前景占比 sanity 抓不到这种退化。
+ * 故在送模型前先判定：已近白底就原样保留原图，既避免糊水印，也省掉无收益的 2.5s 推理。
+ *
+ * 判定取图像四条边缘窄带（背景最可能出现的位置）的灰度统计，均值够高 + 方差够小算干净。
+ * 只要求「4 条中至少 3 条」而非全部：实测水印/角标通常只压住一条边（如顶部品牌字），
+ * 那类图整体仍是白底、不该抠；而真正需要抠图的杂背景图四条边全脏（实测 0 条达标），
+ * 两者分得很开。按窄带 extract 而非整图统计，避免被大面积主体带偏。
+ * @param image 原图 buffer（任意 sharp 可读格式）
+ * @returns true=背景已干净，应跳过抠图
+ */
+async function hasCleanBackground(image: Buffer): Promise<boolean> {
+  const gray = sharp(image).greyscale();
+  const { width, height } = await gray.metadata();
+  if (!width || !height) return false;
+
+  const band = Math.max(1, Math.round(Math.min(width, height) * CLEAN_BG_BAND_RATIO));
+  const regions = [
+    { left: 0, top: 0, width, height: band }, // 上
+    { left: 0, top: height - band, width, height: band }, // 下
+    { left: 0, top: 0, width: band, height }, // 左
+    { left: width - band, top: 0, width: band, height }, // 右
+  ];
+
+  const png = await gray.png().toBuffer();
+  let cleanBands = 0;
+  for (const region of regions) {
+    // 注意：stats() 统计的是输入图，不走 extract 管道，必须先 toBuffer 落地裁切结果
+    const cropped = await sharp(png).extract(region).png().toBuffer();
+    const { channels } = await sharp(cropped).stats();
+    const lum = channels[0];
+    if (lum.mean >= CLEAN_BG_MIN_MEAN && lum.stdev <= CLEAN_BG_MAX_STDEV) cleanBands += 1;
+  }
+  return cleanBands >= CLEAN_BG_MIN_BANDS;
+}
+
+/**
+ * @imgly 资源目录（dist）的 file:// URL，显式传给 removeBackground 的 publicPath。
+ * 规避它默认按 cwd 推断资源路径、在 pnpm .pnpm store 结构下找不到 resources.json 的问题。
+ * require.resolve 定位真实包目录（不 hardcode 版本），进程内缓存一次。
+ */
+let imglyPublicPathCache: string | undefined;
+function imglyPublicPath(): string {
+  if (!imglyPublicPathCache) {
+    const entry = require.resolve('@imgly/background-removal-node');
+    imglyPublicPathCache = pathToFileURL(dirname(entry) + sep).href;
+  }
+  return imglyPublicPathCache;
+}
 
 /** 商品图裁剪的最小边长（像素）：低于此值多半框到了缩略图/图标而非商品主图 */
 const MIN_CROP_PX = 200;
@@ -202,6 +272,68 @@ export class GarmentService {
       return await this.upload.putImage(ownerId, cropped, 'garments', 'jpg');
     } catch (err) {
       this.logger.warn(`商品图裁剪失败，回退整张截图：${String(err)}`);
+      return null;
+    }
+  }
+
+  /**
+   * 对拍照/选图的实物图做背景移除，产出「只有衣服 + 白底」的干净主图（PRD 4.1 主图质量）。
+   *
+   * 与 cropProductImage 的区别：那是按 bbox 矩形裁切商品图；这里是语义抠图去背景。
+   * 适用「衣服为画面主体」的实物图（平铺/挂拍）；模特图不在本能力范围。
+   * 抠图是锦上添花：任一步失败或前景占比越界只返回 null（前端回退原图），不阻塞录入。
+   * 原图背景已近白底时直接跳过（见 hasCleanBackground），避免糊掉水印反而更差。
+   * @imgly/background-removal-node 为 ESM 包，在 CJS(NestJS) 下动态 import。
+   * @param ownerId 归属用户 id（上传目录隔离）
+   * @param imageUrl 又拍云原图 URL
+   * @returns 白底图 URL；开关关闭 / 原图已够干净 / 抠图不理想 / 任一步失败时为 null
+   */
+  async cutoutGarment(
+    ownerId: string,
+    imageUrl: string,
+  ): Promise<string | null> {
+    if (!CUTOUT_ENABLED) return null;
+    try {
+      const resp = await fetch(imageUrl, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) throw new Error(`原图下载响应 ${resp.status}`);
+      const source = Buffer.from(await resp.arrayBuffer());
+
+      // 背景已够干净：抠图无收益且可能糊掉水印，保留原图更稳（也省一次推理）
+      if (await hasCleanBackground(source)) {
+        this.logger.log('原图背景已近白底，跳过抠图');
+        return null;
+      }
+
+      // @imgly 从裸 Buffer 检测不出格式：先用 sharp 统一转 PNG，再包成带 MIME 的 Blob
+      const png = await sharp(source).png().toBuffer();
+      const input = new Blob([png], { type: 'image/png' });
+
+      // ESM-only 包，运行时动态加载；模型内置，首调有初始化开销后进程内复用。
+      // publicPath 显式指向包内 dist（见 imglyPublicPath 注释）
+      const { removeBackground } = await import('@imgly/background-removal-node');
+      const blob = await removeBackground(input, {
+        publicPath: imglyPublicPath(),
+        output: { format: 'image/png' }, // 保留 alpha 供 sanity 判定与白底合成
+      });
+      const cutout = Buffer.from(await blob.arrayBuffer());
+
+      // sanity：用 alpha 均值近似前景占比，越界视为抠图失败（纯色误抠 / 背景没抠掉）
+      const stats = await sharp(cutout).stats();
+      const alpha = stats.channels[3];
+      const fgRatio = alpha ? alpha.mean / 255 : 1;
+      if (fgRatio < CUTOUT_FG_MIN || fgRatio > CUTOUT_FG_MAX) {
+        this.logger.warn(`抠图前景占比异常(${fgRatio.toFixed(2)})，回退原图`);
+        return null;
+      }
+
+      // 透明区合成白底 → JPEG
+      const whiteBg = await sharp(cutout)
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      return await this.upload.putImage(ownerId, whiteBg, 'garments', 'jpg');
+    } catch (err) {
+      this.logger.warn(`衣物抠图失败，回退原图：${String(err)}`);
       return null;
     }
   }

@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { User } from '../prisma/client';
 import { CreateGarmentDto } from './dto/create-garment.dto';
+import { CutoutGarmentDto } from './dto/cutout-garment.dto';
 import { ExtractScreenshotDto } from './dto/extract-screenshot.dto';
 import { RecognizeGarmentDto } from './dto/recognize-garment.dto';
 import { SetArchivedDto } from './dto/set-archived.dto';
@@ -75,6 +76,21 @@ export class GarmentController {
         message: '没读出商品信息，可先存截图稍后补充',
       };
     }
+  }
+
+  /**
+   * 对拍照/选图的实物图抠图去背景，产出白底主图 URL，不入库（供确认页预览 + create 落 cutoutImageUrl）。
+   *
+   * 与识别正交、前端并行调用；抠图不理想/失败返回 cutoutImageUrl=null，
+   * 前端回退原图、不阻塞录入（cutoutGarment 内部已全兜底，不抛）。
+   * @param user 当前登录用户（上传目录隔离）
+   * @param dto 已上传的实物图 URL
+   * @returns 白底图 URL，抠不出为 null
+   */
+  @Post('cutout')
+  async cutout(@CurrentUser() user: User, @Body() dto: CutoutGarmentDto) {
+    const cutoutImageUrl = await this.garments.cutoutGarment(user.id, dto.imageUrl);
+    return { cutoutImageUrl };
   }
 
   /**

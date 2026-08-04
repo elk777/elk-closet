@@ -36,7 +36,7 @@ export class CreateGarmentDto {
   @IsUrl({}, { message: 'originalImageUrl 必须是合法 URL' })
   originalImageUrl!: string;
 
-  /** 抠图去背景后的图；本版暂不抠图，允许缺省 */
+  /** 抠图去背景后的白底图；拍照分支由 /garments/cutout 产出，抠不出或截图导入时缺省 */
   @IsOptional()
   @IsUrl({}, { message: 'cutoutImageUrl 必须是合法 URL' })
   cutoutImageUrl?: string;

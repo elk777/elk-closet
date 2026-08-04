@@ -3,17 +3,15 @@ packages:
   - "packages/*"
 
 allowBuilds:
-  '@parcel/watcher': false
-  core-js: false
-  esbuild: false
-  vue-demi: false
+  sharp: true
 
 # 允许执行构建脚本的依赖白名单（pnpm 9+ 默认拦截所有 postinstall 脚本以防供应链攻击）
 # @nestjs/core：脚本仅打印赞助提示，安全放行以消除告警
 # prisma / @prisma/*：需生成查询引擎与类型化 client，必须放行
 # esbuild：vite 编译刚需，必须放行
 # core-js / vue-demi：常见运行时依赖，安全放行
-# sharp：截图裁剪需原生二进制（预编译包按平台落地），必须放行
+# sharp：截图裁剪 + @imgly 抠图均依赖原生二进制（预编译包按平台落地），必须放行
+# onnxruntime-node：@imgly 背景移除的推理引擎，需原生二进制
 onlyBuiltDependencies:
   - "@nestjs/core"
   - "sharp"
@@ -23,3 +21,4 @@ onlyBuiltDependencies:
   - "esbuild"
   - "core-js"
   - "vue-demi"
+  - "onnxruntime-node"
