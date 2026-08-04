@@ -44,7 +44,13 @@ export type RecognizeResponse =
  * @returns 识别响应信封（成败由 recognized 标记，见 RecognizeResponse）
  */
 export function recognizeGarment(imageUrl: string) {
-  return http.post<RecognizeResponse>('/garments/recognize', { imageUrl });
+  return http.post<RecognizeResponse>(
+    '/garments/recognize',
+    { imageUrl },
+    // 主模型(7~20s)失败切兜底慢模型(28~50s)可破 60s，批量下并发更慢，
+    // 全局 60s 会在后端仍在跑时误报识别失败，与后端 AI_TIMEOUT_MS(180s)对齐
+    { timeout: 180000 },
+  );
 }
 
 /** 抠图响应：cutoutImageUrl=null 表示抠不出，前端回退原图当主图 */
