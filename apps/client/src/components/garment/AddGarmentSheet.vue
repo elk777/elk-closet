@@ -1,26 +1,37 @@
 <script setup lang="ts">
 /**
  * AddGarmentSheet：录入弹层。
- * 两条入口共用同一确认表单与入库出口（PRD 4.1 录入生命线）：
- * - 拍照/选图 → AI 识别属性
+ *
+ * 三条路径共用同一确认表单与入库出口（PRD 4.1 录入生命线）：
+ * - 拍照/选图（单张）→ AI 识别属性 → 确认页
+ * - 拍照/选图（多张）→ 批次流水线，识别后台跑 → 速览列表一起入橱
  * - 购物截图导入 → 多张截图提取名称/品牌/价格（拍照拿不到的数据）
+ * 单张与多张共用一个入口，选完按张数自动分流，不新增入口（简约克制）。
  * 对外接口：v-model:show 控制显隐，@created 通知父级刷新。
  */
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import AppSheet from '../base/AppSheet.vue';
 import AppButton from '../base/AppButton.vue';
 import AppLoading from '../base/AppLoading.vue';
 import RecognitionForm, { type GarmentDraft } from './RecognitionForm.vue';
+import BatchReviewSheet from './BatchReviewSheet.vue';
 import { useUpload } from '../../composables/useUpload';
 import { useRecognition } from '../../composables/useRecognition';
 import { useCutout } from '../../composables/useCutout';
 import { useScreenshotExtract } from '../../composables/useScreenshotExtract';
+import { useBatchQueue, MAX_BATCH_SIZE } from '../../composables/useBatchQueue';
+import { useToast } from '../../composables/useToast';
+import { hasPendingItems } from '../../utils/batch-queue-storage';
 import { createGarment } from '../../api/garment.api';
 
-const props = defineProps<{ show: boolean }>();
+const props = defineProps<{
+  show: boolean;
+  /** 衣橱现有件数，用于批次完成的成就文案 */
+  closetCount?: number;
+}>();
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'created'): void }>();
 
-const { uploading, chooseAndUpload, chooseAndUploadMany } = useUpload();
+const { uploading, chooseOnly, uploadOne, chooseAndUploadMany } = useUpload();
 const { recognizing, recognizingHint, recognize, lowConfidence } = useRecognition();
 const { cutting, cutout } = useCutout();
 const {
@@ -29,6 +40,7 @@ const {
   extract,
   lowConfidence: extractLowConfidence,
 } = useScreenshotExtract();
+const batch = useBatchQueue();
 
 const imageUrl = ref<string | null>(null);
 /** 拍照分支抠图去背景后的白底主图；截图分支恒 null。预览与主图优先用它 */
@@ -39,10 +51,34 @@ const saving = ref(false);
 const fromScreenshot = ref(false);
 /** 识别/提取结果提示条：failed=没读出来（先存后补），low=低置信度建议核对 */
 const recognitionNotice = ref<'' | 'failed' | 'low'>('');
+/** 是否处于批次视图 */
+const showBatch = ref(false);
+/** 批次入橱进行中：入库是这里的异步过程，交给列表禁用按钮防连点重复创建 */
+const batchSaving = ref(false);
 
-/** 入口一：选图并直传，成功后并行触发识别 + 抠图去背景 */
+// 打开弹层时恢复上次未入橱的批次：录入是主动行为，不在 app 冷启时打断用户
+watch(
+  () => props.show,
+  (open) => {
+    if (!open) return;
+    batch.restore();
+    if (hasPendingItems(batch.items.value)) {
+      showBatch.value = true;
+      useToast().info(`上次还有 ${batch.items.value.length} 件没入橱`);
+    }
+  },
+);
+
+/** 入口一：选图后按张数分流——单张走原流程，多张走批次流水线 */
 async function pickAndRecognize() {
-  const up = await chooseAndUpload();
+  const paths = await chooseOnly(MAX_BATCH_SIZE);
+  if (!paths.length) return;
+  if (paths.length > 1) {
+    showBatch.value = true;
+    await batch.addPaths(paths);
+    return;
+  }
+  const up = await uploadOne(paths[0]);
   if (!up) return;
   fromScreenshot.value = false;
   imageUrl.value = up.imageUrl;
@@ -56,6 +92,40 @@ async function pickAndRecognize() {
   cutoutImageUrl.value = cut; // 抠出白底则确认页预览换它，null 回退原图
   recognitionNotice.value =
     rec === null ? 'failed' : lowConfidence.value ? 'low' : '';
+}
+
+/** 批次「继续拍」：追加到现有队列，不清空已有项 */
+async function continueShoot() {
+  const remain = MAX_BATCH_SIZE - batch.items.value.length;
+  if (remain <= 0) {
+    useToast().info(`单批最多 ${MAX_BATCH_SIZE} 件，先入橱再继续`);
+    return;
+  }
+  const paths = await chooseOnly(remain);
+  if (paths.length) await batch.addPaths(paths);
+}
+
+/** 批次入橱：全部成功才收尾，有残留则留在列表让用户处理 */
+async function saveBatch() {
+  if (batchSaving.value) return;
+  batchSaving.value = true;
+  let saved = 0;
+  try {
+    saved = await batch.saveAll();
+  } finally {
+    batchSaving.value = false;
+  }
+  if (!saved) return;
+  emit('created');
+  if (!hasPendingItems(batch.items.value)) {
+    // 首页入口拿不到衣橱总数，此时只报本次件数，不显示错误的总数
+    useToast().success(
+      props.closetCount != null
+        ? `本次上线 ${saved} 件，衣橱已有 ${props.closetCount + saved} 件`
+        : `本次上线 ${saved} 件`,
+    );
+    showBatch.value = false;
+  }
 }
 
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */
@@ -119,12 +189,28 @@ function close() {
 </script>
 
 <template>
-  <AppSheet :model-value="show" title="添加衣物" subtitle="拍照或选图，自动识别品类、颜色、材质" @update:model-value="close">
+  <!-- 批次视图：多张录入的速览确认 -->
+  <BatchReviewSheet
+    v-if="showBatch"
+    :show="show"
+    :items="batch.items.value"
+    :uploading="batch.uploading.value"
+    :saving="batchSaving"
+    :closet-count="closetCount ?? 0"
+    @update:show="showBatch = false; close()"
+    @continue-shoot="continueShoot"
+    @update-draft="batch.updateDraft"
+    @remove="batch.removeItem"
+    @retry="batch.retryItem"
+    @save-all="saveBatch"
+  />
+
+  <AppSheet v-else :model-value="show" title="添加衣物" subtitle="拍照或选图，自动识别品类、颜色、材质" @update:model-value="close">
     <!-- 未选图：两个并列入口 -->
     <view v-if="!imageUrl">
       <view class="dz" @click="pickAndRecognize">
         <text class="dz__t">拍照 / 从相册选择</text>
-        <text class="dz__s">平铺或挂拍、背景干净，自动抠图去背景 + 识别</text>
+        <text class="dz__s">平铺或挂拍、背景干净，自动抠图去背景 + 识别；可多选连拍</text>
       </view>
       <view class="dz dz--alt" @click="pickScreenshotsAndExtract">
         <text class="dz__t">从购物截图导入</text>

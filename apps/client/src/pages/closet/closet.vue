@@ -154,7 +154,7 @@
     </view>
 
     <!-- 录入弹层 -->
-    <AddGarmentSheet v-model:show="showAdd" @created="onCreated" />
+    <AddGarmentSheet v-model:show="showAdd" :closet-count="garments.length" @created="onCreated" />
   </view>
 </template>
 
