@@ -117,15 +117,18 @@ async function saveBatch() {
   }
   if (!saved) return;
   emit('created');
-  if (!hasPendingItems(batch.items.value)) {
-    // 首页入口拿不到衣橱总数，此时只报本次件数，不显示错误的总数
-    useToast().success(
-      props.closetCount != null
-        ? `本次上线 ${saved} 件，衣橱已有 ${props.closetCount + saved} 件`
-        : `本次上线 ${saved} 件`,
-    );
-    showBatch.value = false;
+  if (hasPendingItems(batch.items.value)) {
+    // 还有识别中或入库失败的项：留在列表继续处理，但先确认这批已经进去了
+    useToast().success(`已入橱 ${saved} 件，剩下的可稍后再入`);
+    return;
   }
+  // 首页入口拿不到衣橱总数，此时只报本次件数，不显示错误的总数
+  useToast().success(
+    props.closetCount != null
+      ? `本次上线 ${saved} 件，衣橱已有 ${props.closetCount + saved} 件`
+      : `本次上线 ${saved} 件`,
+  );
+  showBatch.value = false;
 }
 
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */

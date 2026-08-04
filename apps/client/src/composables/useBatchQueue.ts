@@ -80,8 +80,16 @@ export function useBatchQueue() {
     });
   }
 
-  /** 排入识别等待区并尝试启动 */
+  /**
+   * 排入识别等待区并尝试启动。
+   *
+   * 入队即标 processing：池满时该项要排队等，状态若停在 failed
+   * 会让列表上的「重试识别」按钮继续显示、被反复点进队列，
+   * 白白多打几发 42w 请求。
+   */
   function enqueue(id: string): void {
+    if (waiting.includes(id)) return;
+    patch(id, { status: 'processing' });
     waiting.push(id);
     pump();
   }
@@ -102,7 +110,6 @@ export function useBatchQueue() {
     const item = items.value.find((it) => it.id === id);
     if (!item?.imageUrl) return;
     running++;
-    patch(id, { status: 'processing' });
     try {
       const { recognize, lowConfidence } = useRecognition();
       const { cutout } = useCutout();
@@ -144,6 +151,9 @@ export function useBatchQueue() {
   /**
    * 批量入橱：逐件串行创建。
    *
+   * 只收已出结果的项（ready / 识别失败但有图）。仍在上传或识别的项必须跳过：
+   * 提前入库既丢掉即将返回的识别结果，回填时又会把 saved 覆写回 ready，
+   * 用户再点一次「全部入橱」就会重复建同一件衣物。
    * 不做「全成功或全回滚」——已入橱的衣物再撤回反而违背「先囫囵存进去」，
    * 失败项留在队列标记 failed，用户可重试或移除。
    * @returns 本次成功入橱的件数
@@ -151,7 +161,8 @@ export function useBatchQueue() {
   async function saveAll(): Promise<number> {
     let saved = 0;
     for (const item of items.value) {
-      if (item.status === 'saved' || !item.imageUrl) continue;
+      if (!item.imageUrl) continue;
+      if (item.status !== 'ready' && item.status !== 'failed') continue;
       try {
         await createGarment({
           originalImageUrl: item.imageUrl,

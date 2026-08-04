@@ -35,9 +35,12 @@ const emit = defineEmits<{
 /** 当前展开编辑的项 id；同时只展开一个，保持列表可扫视 */
 const expandedId = ref<string | null>(null);
 
-/** 可入橱的项：有图即可（识别失败也走「先存图后补」） */
+/** 本次可入橱的项：口径须与 useBatchQueue.saveAll 一致——已出结果且有图 */
 const savableCount = computed(
-  () => props.items.filter((it) => it.imageUrl && it.status !== 'saved').length,
+  () =>
+    props.items.filter(
+      (it) => it.imageUrl && (it.status === 'ready' || it.status === 'failed'),
+    ).length,
 );
 /** 仍在识别中的项数，用于底部提示 */
 const processingCount = computed(
@@ -122,7 +125,7 @@ function toggle(id: string) {
       <!-- 底部操作 -->
       <view class="bq-foot">
         <text v-if="processingCount" class="bq-foot__hint">
-          还有 {{ processingCount }} 件在识别，可以先继续拍
+          还有 {{ processingCount }} 件在识别，识别完再一起入橱；可以先继续拍
         </text>
         <view class="bq-foot__btns">
           <AppButton type="secondary" :disabled="uploading" @click="emit('continue-shoot')">
