@@ -47,6 +47,25 @@ export function recognizeGarment(imageUrl: string) {
   return http.post<RecognizeResponse>('/garments/recognize', { imageUrl });
 }
 
+/** 抠图响应：cutoutImageUrl=null 表示抠不出，前端回退原图当主图 */
+export interface CutoutResponse {
+  cutoutImageUrl: string | null;
+}
+
+/**
+ * 对拍照/选图的实物图抠图去背景（不入库，供确认页预览 + create 落 cutoutImageUrl）。
+ * @param imageUrl 又拍云图 URL
+ * @returns 白底图 URL，抠不出为 null
+ */
+export function cutoutGarment(imageUrl: string) {
+  return http.post<CutoutResponse>(
+    '/garments/cutout',
+    { imageUrl },
+    // 抠图后端约 3~4s，首调含模型加载，留足余量
+    { timeout: 30000 },
+  );
+}
+
 /**
  * 截图提取响应：降级哲学与识别一致，用 extracted 标记成败。
  * - extracted=true 时带 result（字段可为 null——读不到不编造）与

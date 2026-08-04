@@ -13,6 +13,7 @@ import AppLoading from '../base/AppLoading.vue';
 import RecognitionForm, { type GarmentDraft } from './RecognitionForm.vue';
 import { useUpload } from '../../composables/useUpload';
 import { useRecognition } from '../../composables/useRecognition';
+import { useCutout } from '../../composables/useCutout';
 import { useScreenshotExtract } from '../../composables/useScreenshotExtract';
 import { createGarment } from '../../api/garment.api';
 
@@ -21,6 +22,7 @@ const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'created'):
 
 const { uploading, chooseAndUpload, chooseAndUploadMany } = useUpload();
 const { recognizing, recognizingHint, recognize, lowConfidence } = useRecognition();
+const { cutting, cutout } = useCutout();
 const {
   extracting,
   extractingHint,
@@ -29,6 +31,8 @@ const {
 } = useScreenshotExtract();
 
 const imageUrl = ref<string | null>(null);
+/** 拍照分支抠图去背景后的白底主图；截图分支恒 null。预览与主图优先用它 */
+const cutoutImageUrl = ref<string | null>(null);
 const form = ref<GarmentDraft | null>(null);
 const saving = ref(false);
 /** 本次是否走截图导入：决定失败文案与入库时的待补实物图标记 */
@@ -36,15 +40,22 @@ const fromScreenshot = ref(false);
 /** 识别/提取结果提示条：failed=没读出来（先存后补），low=低置信度建议核对 */
 const recognitionNotice = ref<'' | 'failed' | 'low'>('');
 
-/** 入口一：选图并直传，成功后自动触发识别 */
+/** 入口一：选图并直传，成功后并行触发识别 + 抠图去背景 */
 async function pickAndRecognize() {
   const up = await chooseAndUpload();
   if (!up) return;
   fromScreenshot.value = false;
   imageUrl.value = up.imageUrl;
-  form.value = await recognize(up.imageUrl); // 失败返回 null → 先存图后补
+  cutoutImageUrl.value = null;
+  // 识别（读属性）与抠图（去背景）正交，前端并行、互不阻塞；两者失败都不阻断录入
+  const [rec, cut] = await Promise.all([
+    recognize(up.imageUrl),
+    cutout(up.imageUrl),
+  ]);
+  form.value = rec; // 失败返回 null → 先存图后补
+  cutoutImageUrl.value = cut; // 抠出白底则确认页预览换它，null 回退原图
   recognitionNotice.value =
-    form.value === null ? 'failed' : lowConfidence.value ? 'low' : '';
+    rec === null ? 'failed' : lowConfidence.value ? 'low' : '';
 }
 
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */
@@ -52,6 +63,7 @@ async function pickScreenshotsAndExtract() {
   const urls = await chooseAndUploadMany(3);
   if (!urls) return;
   fromScreenshot.value = true;
+  cutoutImageUrl.value = null; // 截图分支不抠图，主图用截图/cropped 本身
   // 主图先用第一张截图顶着（先囫囵存进去），详情页引导之后补实物图
   imageUrl.value = urls[0];
   const extracted = await extract(urls);
@@ -81,6 +93,7 @@ async function save() {
   try {
     await createGarment({
       originalImageUrl: imageUrl.value,
+      ...(cutoutImageUrl.value ? { cutoutImageUrl: cutoutImageUrl.value } : {}),
       ...(form.value ?? {}),
       ...(fromScreenshot.value
         ? { extra: { source: 'screenshot', pendingPhoto: true } }
@@ -95,6 +108,7 @@ async function save() {
 
 function reset() {
   imageUrl.value = null;
+  cutoutImageUrl.value = null;
   form.value = null;
   fromScreenshot.value = false;
   recognitionNotice.value = '';
@@ -110,7 +124,7 @@ function close() {
     <view v-if="!imageUrl">
       <view class="dz" @click="pickAndRecognize">
         <text class="dz__t">拍照 / 从相册选择</text>
-        <text class="dz__s">自动识别品类、颜色、材质</text>
+        <text class="dz__s">平铺或挂拍、背景干净，自动抠图去背景 + 识别</text>
       </view>
       <view class="dz dz--alt" @click="pickScreenshotsAndExtract">
         <text class="dz__t">从购物截图导入</text>
@@ -118,15 +132,15 @@ function close() {
       </view>
     </view>
 
-    <!-- 上传/识别/提取中 -->
+    <!-- 上传/识别/抠图/提取中 -->
     <AppLoading
-      v-else-if="uploading || recognizing || extracting"
+      v-else-if="uploading || recognizing || cutting || extracting"
       :text="uploading ? '上传中…' : extracting ? extractingHint : recognizingHint"
     />
 
     <!-- 识别/提取完成：确认表单 -->
     <view v-else>
-      <image class="preview" :src="imageUrl" mode="aspectFit" />
+      <image class="preview" :src="cutoutImageUrl || imageUrl" mode="aspectFit" />
       <view v-if="recognitionNotice" class="notice" :class="`notice--${recognitionNotice}`">
         <text>{{ recognitionNotice === 'failed'
           ? (fromScreenshot
