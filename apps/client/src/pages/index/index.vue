@@ -110,6 +110,12 @@
 
     <!-- 有推荐：套装卡列表 -->
     <view v-else-if="rec?.status === 'ok'" class="outfits">
+      <!-- 「换一套」失败时旧搭配仍在（比空屏好），但要说明这不是新结果 -->
+      <view v-if="loadError" class="stale" @click="reload">
+        <text class="stale__t">没能换新，仍是上一套</text>
+        <text class="stale__cta">重试 ↻</text>
+      </view>
+
       <view v-for="(o, i) in rec.outfits" :key="i" class="outfit">
         <view class="outfit__head">
           <view class="outfit__tags">
@@ -157,6 +163,15 @@
       </view>
     </view>
 
+    <!-- 拉取失败（网络 / AI 网关抖动）：给出可重试出口，不让页面空着 -->
+    <view v-else-if="loadError" class="empty">
+      <text class="empty-t">没能生成今日推荐</text>
+      <text class="empty-s">网络或 AI 服务不太稳，稍后再试一次</text>
+      <view class="empty-cta" @click="reload">
+        <text>再试一次</text>
+      </view>
+    </view>
+
     <!-- 悬浮添加按钮：首页直接录入，录入后件数变化可能解锁/刷新推荐（PRD 4.1 生命线） -->
     <view class="fab" @click="showAdd = true">
       <AppIcon name="plus" :size="40" color="#fff" />
@@ -189,6 +204,15 @@ const { menuTop, menuHeight } = useSafeArea();
 
 const rec = ref<TodayRecommendation | null>(null);
 const loading = ref(true);
+/**
+ * 上次拉取是否失败（网络异常 / AI 网关抖动）。
+ *
+ * 与后端的 empty 态不同：empty 是「后端答了，但没搭出套装」，
+ * 这里是「压根没拿到答复」。两者都需给用户一个可重试的出口——
+ * 失败时若不标记，rec 会停在旧值或 null，模板的 status 分支全落空，
+ * 页面会整片空白（既没内容也没提示），用户只能干等。
+ */
+const loadError = ref(false);
 /**
  * 是否已首次加载过。
  * 今日推荐是首页，load() 含定位 + AI 生成（重操作），若每次 onShow（从任意
@@ -228,10 +252,11 @@ const rainText = computed(() => {
 /**
  * 拉取今日推荐。
  * 先幂等确保登录，再尝试取定位（失败静默降级，后端用兜底城市）。
- * 失败提示由请求器统一处理，这里只兜底停 loading。
+ * 失败提示由请求器统一处理，这里额外标记 loadError 让页面出可重试的兜底态。
  */
 async function load() {
   loading.value = true;
+  loadError.value = false;
   try {
     await userStore.ensureLogin();
     const coords = await getCoords();
@@ -241,7 +266,8 @@ async function load() {
     });
     loaded.value = true;
   } catch {
-    // 提示已由 request / ensureLogin 统一处理
+    // 提示已由 request / ensureLogin 统一处理，这里只记状态供模板兜底渲染
+    loadError.value = true;
   } finally {
     loading.value = false;
   }
@@ -577,6 +603,25 @@ function goCheckIn(items: { id: string }[]) {
   flex-direction: column;
   align-items: center;
   padding-top: 60px;
+}
+/* 「换一套」失败时压在旧搭配上方的提示条：弱化处理，不喧宾夺主 */
+.stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border: 1px solid $zy-line;
+  border-radius: $zy-radius-sm;
+  background: $zy-surface;
+}
+.stale__t {
+  font-size: 13px;
+  color: $zy-ink-2;
+}
+.stale__cta {
+  font-size: 13px;
+  font-weight: 600;
+  color: $zy-accent;
 }
 .empty-t {
   font-size: 16px;
