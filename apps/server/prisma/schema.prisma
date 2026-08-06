@@ -48,6 +48,7 @@ model User {
   garments  Garment[]
   outfits   Outfit[]
   categories Category[]
+  recommendations Recommendation[]
 
   @@map("users")
 }
@@ -189,4 +190,37 @@ model OutfitItem {
   @@unique([outfitId, garmentId])
   @@index([garmentId])
   @@map("outfit_items")
+}
+
+/// 今日推荐缓存：同一用户同一天同一时段只存一条（PRD 4.5 缓存改造）。
+/// 存在的理由是 AI 生成一次约 60s，冷启动重复付这个代价不合理；
+/// 顺带让「今天推荐了啥」可回溯，未来可与穿搭日记对出采纳率。
+model Recommendation {
+  id         String   @id @default(cuid())
+  ownerId    String   @map("owner_id")
+  owner      User     @relation(fields: [ownerId], references: [id])
+
+  /// 缓存日期（按服务器本地时区取零点，与 timeslot 同一时区口径）
+  date       DateTime @db.Date
+  /// 时段：morning(05-11) | noon(11-17) | evening(17-次日05)
+  timeslot   String
+
+  /// 天气快照，结构同 RecommendWeather；生成时天气取不到则为 null
+  weather    Json?
+  /// 推荐套装（结构同 RecommendedOutfitView[]，含完整 Garment，前端无需回查）
+  outfits    Json
+  /// 本次推荐用到的衣物 id；校验缓存时逐个确认仍在库未闲置
+  garmentIds Json     @map("garment_ids")
+  /// 生成时的当季可用件数；仅作回溯/采纳率分析的上下文记录，
+  /// 不参与缓存失效判定（新增走 stale 软标记、删除走单品存活校验）
+  seasonalCount Int   @map("seasonal_count")
+
+  /// 新增当季衣物时置 true：不立即重算（60s 重操作），由用户点提示条决定何时刷新
+  stale      Boolean  @default(false)
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([ownerId, date, timeslot])
+  @@index([ownerId, stale])
+  @@map("recommendations")
 }
