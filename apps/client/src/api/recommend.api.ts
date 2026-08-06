@@ -13,6 +13,12 @@ export interface TodayRecommendPayload {
   lat?: number;
   /** 场合，如「通勤」；不传按日常 */
   occasion?: string;
+  /**
+   * 强制重新生成，绕过当日当时段缓存。
+   *
+   * 「换一套」用：用户要的就是换个结果，命中缓存等于点了没反应。
+   */
+  forceRefresh?: boolean;
 }
 
 /**

@@ -116,6 +116,12 @@
         <text class="stale__cta">重试 ↻</text>
       </view>
 
+      <!-- 缓存过期提示：录入了当季新衣物，不自动重算，由用户决定何时刷新 -->
+      <view v-if="cacheStale && !loadError" class="cache-stale-tip" @click="reload">
+        <text class="cache-stale-tip__icon">✨</text>
+        <text class="cache-stale-tip__text">衣橱有新成员，点此重新搭配</text>
+      </view>
+
       <view v-for="(o, i) in rec.outfits" :key="i" class="outfit">
         <view class="outfit__head">
           <view class="outfit__tags">
@@ -220,6 +226,13 @@ const loadError = ref(false);
  * 时自动 load，返回态不刷新；用户想换用「换一套」手动触发。
  */
 const loaded = ref(false);
+/**
+ * 推荐缓存已过期（录入了当季新衣物）。
+ *
+ * 不自动重算：重算是 ~60s 的 AI 生成，录一件付一次代价不合理，连拍录入更是
+ * 成倍浪费。改为出提示条让用户自己决定何时刷新（PRD 4.5 缓存改造 R8）。
+ */
+const cacheStale = ref(false);
 /** 录入弹层开关：首页直接添加衣物（PRD 首页录入入口） */
 const showAdd = ref(false);
 const userStore = useUserStore();
@@ -264,6 +277,7 @@ async function load() {
       lon: coords?.lon,
       lat: coords?.lat,
     });
+    cacheStale.value = rec.value.cacheStale ?? false;
     loaded.value = true;
   } catch {
     // 提示已由 request / ensureLogin 统一处理，这里只记状态供模板兜底渲染
@@ -274,9 +288,26 @@ async function load() {
 }
 
 /** 换一套 / 再试一次：重新生成 */
-function reload() {
+async function reload() {
   if (loading.value) return;
-  load();
+  cacheStale.value = false;
+  loading.value = true;
+  loadError.value = false;
+  try {
+    await userStore.ensureLogin();
+    const coords = await getCoords();
+    rec.value = await getTodayRecommendation({
+      lon: coords?.lon,
+      lat: coords?.lat,
+      forceRefresh: true, // 强制绕过缓存
+    });
+    cacheStale.value = false; // 重算后缓存是新的
+    loaded.value = true;
+  } catch {
+    loadError.value = true;
+  } finally {
+    loading.value = false;
+  }
 }
 
 // 首次进入才自动 load；返回态（loaded 已 true）不重跑，避免重复定位/生成
@@ -285,8 +316,12 @@ onShow(() => {
 });
 
 /**
- * 录入成功：关弹层 + 重新生成推荐。
- * 件数变化可能跨过解锁阈值或改变可搭配单品，故强制刷新（不受 loaded 拦截）。
+ * 录入成功：关弹层 + 轻量刷新（PRD 4.5 缓存改造 R7）。
+ *
+ * 这里仍调 load()，但代价已与改造前不同：后端把新增当季衣物标为 stale 而非
+ * 失效，load() 会命中缓存直接返回旧搭配（不调 AI），只是带回 cacheStale。
+ * 保留这次请求是因为它还负责刷新衣橱件数（副标题「已有 N 件」）——
+ * 弹层是页内组件，关闭不触发 onShow，不请求件数就停在旧值。
  */
 function onCreated() {
   showAdd.value = false;
@@ -619,6 +654,25 @@ function goCheckIn(items: { id: string }[]) {
   color: $zy-ink-2;
 }
 .stale__cta {
+  font-size: 13px;
+  font-weight: 600;
+  color: $zy-accent;
+}
+/* 「衣橱有新成员」提示条：可点击的邀请，比失败提示条稍显主动但仍不抢戏 */
+.cache-stale-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid $zy-accent;
+  border-radius: $zy-radius-sm;
+  background: $zy-surface;
+}
+.cache-stale-tip__icon {
+  font-size: 15px;
+}
+.cache-stale-tip__text {
+  flex: 1;
   font-size: 13px;
   font-weight: 600;
   color: $zy-accent;
