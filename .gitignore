@@ -47,3 +47,9 @@ coverage/
 .codex
 .trellis
 
+# 模型质量探针（本地私有工具）
+# 题库不入库：一旦公开就可能被上游针对性优化，测试结果随之失去意义；
+# 报告含渠道端点等信息，同样只留本地。
+apps/server/scripts/model-probe/
+k3-quality-test.md
+
