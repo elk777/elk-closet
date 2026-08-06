@@ -15,8 +15,10 @@ import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import {
   majorTypeOf,
+  seasonOfMonth,
   type RecognitionResult,
   type ScreenshotExtractResult,
+  type Season,
 } from '@zhiyi/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
@@ -356,7 +358,7 @@ export class GarmentService {
     // majorType 一律按分类表归属推导，保证与 category 一致（防前后端不同步）
     const majorType = majorTypeOf(category, majorTypes);
 
-    return this.prisma.garment.create({
+    const created = await this.prisma.garment.create({
       data: {
         ownerId,
         name: dto.name ?? FALLBACK.name,
@@ -376,6 +378,34 @@ export class GarmentService {
         price: dto.price ?? null,
       },
     });
+
+    await this.markRecommendationStale(ownerId, created.seasons as Season[]);
+    return created;
+  }
+
+  /**
+   * 新增当季衣物后把推荐缓存标脏（PRD 4.5 缓存改造 R3）。
+   *
+   * 只标记不重算：重算是 ~60s 的 AI 生成，录一件付一次代价不合理，
+   * 连拍批量录入更是成倍浪费。首页据此出提示条，由用户决定何时刷新。
+   * 非当季衣物（夏天入库的羽绒服）不影响当下推荐，不标。
+   * 标记失败只告警——录入生命线不该被缓存维护拖累（PRD 5.6）。
+   * @param ownerId 归属用户 id
+   * @param seasons 新增衣物的适用季节
+   */
+  private async markRecommendationStale(
+    ownerId: string,
+    seasons: Season[],
+  ): Promise<void> {
+    if (!Array.isArray(seasons) || !seasons.includes(seasonOfMonth())) return;
+    try {
+      await this.prisma.recommendation.updateMany({
+        where: { ownerId, stale: false },
+        data: { stale: true },
+      });
+    } catch (e) {
+      this.logger.warn(`推荐缓存标脏失败：${String(e)}`);
+    }
   }
 
   /**
@@ -434,9 +464,37 @@ export class GarmentService {
    */
   async setArchived(ownerId: string, id: string, archived: boolean) {
     await this.detail(ownerId, id); // 归属与存在性校验
-    return this.prisma.garment.update({
+    const updated = await this.prisma.garment.update({
       where: { id },
       data: { archived },
     });
+    await this.dropRecommendationUsing(ownerId, id);
+    return updated;
+  }
+
+  /**
+   * 删掉引用了某件衣物的推荐缓存（PRD 4.5 缓存改造 R3）。
+   *
+   * 与「新增标脏」不同，这里直接删而非标脏：推荐里摆着一件已归档/已删的单品，
+   * 是错误结果而不只是过时结果，不能留给用户点开才发现。
+   * 归档与取消归档都要清——两个方向都改变了候选池。
+   * 缓存侧 isCacheValid 还会再校验一次单品存活，这里删不掉也不会漏出脏结果。
+   * @param ownerId 归属用户 id
+   * @param garmentId 发生变更的衣物 id
+   */
+  private async dropRecommendationUsing(
+    ownerId: string,
+    garmentId: string,
+  ): Promise<void> {
+    try {
+      // garment_ids 是 JSON 数组，用 @> 判断是否包含该 id
+      await this.prisma.$executeRaw`
+        DELETE FROM recommendations
+        WHERE owner_id = ${ownerId}
+          AND garment_ids @> ${JSON.stringify([garmentId])}::jsonb
+      `;
+    } catch (e) {
+      this.logger.warn(`推荐缓存清理失败：${String(e)}`);
+    }
   }
 }
