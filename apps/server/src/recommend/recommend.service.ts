@@ -14,6 +14,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  getTimeslot,
   pruneRecommend,
   RECOMMEND_UNLOCK_THRESHOLD,
   seasonOfMonth,
@@ -22,7 +23,9 @@ import {
   type MatchedOutfits,
   type RecommendInput,
   type RecommendedOutfitView,
+  type RecommendWeather,
   type Season,
+  type Timeslot,
   type TodayRecommendation,
   type WardrobeBriefItem,
 } from '@zhiyi/shared';
@@ -31,6 +34,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WeatherService } from '../weather/weather.service';
 import type { MatchOutfitDto } from './dto/match-outfit.dto';
 import type { TodayRecommendDto } from './dto/today-recommend.dto';
+import type { Recommendation } from '../prisma/client';
 
 @Injectable()
 export class RecommendService {
@@ -75,6 +79,30 @@ export class RecommendService {
       return { ...base, status: 'locked', outfits: [] };
     }
 
+    // 当季件数：既是缓存校验依据，也随缓存一起落库
+    const season = seasonOfMonth();
+    const seasonalCount = garments.filter((g) =>
+      (g.seasons as Season[]).includes(season),
+    ).length;
+
+    const now = new Date();
+    const date = this.cacheDate(now);
+    const timeslot = getTimeslot(now);
+
+    // 「换一套」显式绕过缓存：用户要的就是换一个结果，命中缓存等于没反应
+    if (!dto.forceRefresh) {
+      const cache = await this.findCache(ownerId, date, timeslot);
+      if (cache && this.isCacheValid(cache, weather, garments)) {
+        return {
+          ...base,
+          status: 'ok',
+          outfits: cache.outfits as unknown as RecommendedOutfitView[],
+          // 旧搭配照常展示，仅回传「有新衣物」让首页出提示条
+          cacheStale: cache.stale,
+        };
+      }
+    }
+
     // 组装 AI 输入：衣橱只传摘要（不含图，控 token）
     const wardrobe = this.toBrief(garments);
 
@@ -86,11 +114,24 @@ export class RecommendService {
 
     const outfits = await this.generate(input, garments);
 
+    // 只缓存有结果的生成：empty 多半是模型没搭出来，缓存它等于把失败固化一整个时段
+    if (outfits.length > 0) {
+      await this.writeCache({
+        ownerId,
+        date,
+        timeslot,
+        weather,
+        outfits,
+        seasonalCount,
+      });
+    }
+
     return {
       ...base,
       status: outfits.length > 0 ? 'ok' : 'empty',
       weather,
       outfits,
+      cacheStale: false,
     };
   }
 
@@ -154,6 +195,122 @@ export class RecommendService {
       status: outfits.length > 0 ? 'ok' : 'empty',
       outfits,
     };
+  }
+
+  /* ──────────────── 今日推荐缓存 ──────────────── */
+
+  /**
+   * 取缓存键用的日期（服务器本地时区零点）。
+   *
+   * 必须与 getTimeslot 同一时区口径：timeslot 读的是本地小时，
+   * 若这里用 UTC 零点，东八区 08:00 之前会算进前一天，缓存键与时段错位。
+   * @param now 基准时间
+   * @returns 当天零点
+   */
+  private cacheDate(now: Date): Date {
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  /**
+   * 读当前用户在该日期该时段的缓存。
+   *
+   * 缓存故障不该阻断推荐：查询异常一律当「没缓存」，退回正常生成路径。
+   * @param ownerId 用户 id
+   * @param date 缓存日期（本地零点）
+   * @param timeslot 时段
+   * @returns 缓存记录，无或异常时 null
+   */
+  private async findCache(
+    ownerId: string,
+    date: Date,
+    timeslot: Timeslot,
+  ): Promise<Recommendation | null> {
+    try {
+      return await this.prisma.recommendation.findUnique({
+        where: { ownerId_date_timeslot: { ownerId, date, timeslot } },
+      });
+    } catch (e) {
+      this.logger.warn(`推荐缓存读取失败，降级为重新生成：${String(e)}`);
+      return null;
+    }
+  }
+
+  /**
+   * 判断缓存是否还能拿来展示（硬失效判定）。
+   *
+   * 只拦「结果已经错了」的情形，不拦「结果已经旧了」：
+   * - 推荐里的单品被删/归档 → 展示出来就是错的，必须重算
+   * - 天气突变 → 厚薄、防雨建议失真，必须重算
+   * 而「新增了当季衣物」只是候选池变大、旧搭配依然成立，走 stale 软标记，
+   * 由前端出提示条让用户决定何时花那 ~60s（PRD D4/R8）——若在此处判失效，
+   * 录入后照样自动重算，提示条永远不会出现，整个缓存改造就白做了。
+   *
+   * 当季件数不参与判定：件数变化要么源于新增（已由 stale 覆盖），
+   * 要么源于删除未被推荐用到的单品（PRD R4 明确不该失效）。
+   * @param cache 缓存记录
+   * @param weather 当前天气，取不到为 null
+   * @param garments 当前在库未闲置衣物
+   * @returns 可展示则 true
+   */
+  private isCacheValid(
+    cache: Recommendation,
+    weather: RecommendWeather | null,
+    garments: Garment[],
+  ): boolean {
+    // 推荐用到的单品必须都还在：删掉一件就不能再展示这套
+    const alive = new Set(garments.map((g) => g.id));
+    const usedIds = cache.garmentIds as unknown as string[];
+    if (!Array.isArray(usedIds) || usedIds.length === 0) return false;
+    if (!usedIds.every((id) => alive.has(id))) return false;
+
+    // 天气突变：温差超 5℃ 或下不下雨翻转，都会让厚薄/防雨判断失真。
+    // 一方缺天气则跳过此项——没有可比对象，不该据此判失效。
+    const cached = cache.weather as RecommendWeather | null;
+    if (weather && cached) {
+      if (Math.abs(cached.temp - weather.temp) > 5) return false;
+      if (cached.rain > 0 !== weather.rain > 0) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 落缓存（同键覆盖）。
+   *
+   * 与读一致：写失败只告警不抛错——推荐已经生成好了，
+   * 因为存不下就把结果丢给用户报错是本末倒置。
+   * @param params 缓存键与内容
+   */
+  private async writeCache(params: {
+    ownerId: string;
+    date: Date;
+    timeslot: Timeslot;
+    weather: RecommendWeather | null;
+    outfits: RecommendedOutfitView[];
+    seasonalCount: number;
+  }): Promise<void> {
+    const { ownerId, date, timeslot, weather, outfits, seasonalCount } = params;
+    // 失效校验只需要 id 列表，从套装里扁平化提取
+    const garmentIds = [
+      ...new Set(outfits.flatMap((o) => o.items.map((g) => g.id))),
+    ];
+    const payload = {
+      weather: (weather ?? null) as never,
+      outfits: outfits as never,
+      garmentIds: garmentIds as never,
+      seasonalCount,
+      stale: false,
+    };
+
+    try {
+      await this.prisma.recommendation.upsert({
+        where: { ownerId_date_timeslot: { ownerId, date, timeslot } },
+        create: { ownerId, date, timeslot, ...payload },
+        update: payload,
+      });
+    } catch (e) {
+      this.logger.warn(`推荐缓存写入失败，本次结果不落库：${String(e)}`);
+    }
   }
 
   /**

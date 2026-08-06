@@ -6,7 +6,14 @@
  * - occasion 为用户主动指定的场合（如「通勤」「约会」），不传按日常推荐
  */
 
-import { IsLatitude, IsLongitude, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsLatitude,
+  IsLongitude,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class TodayRecommendDto {
   /** 经度；前端定位得到，缺省用后端兜底城市 */
@@ -24,4 +31,13 @@ export class TodayRecommendDto {
   @IsString()
   @MaxLength(20)
   occasion?: string;
+
+  /**
+   * 强制重新生成，绕过当日当时段缓存。
+   *
+   * 「换一套」用：用户要的就是换个结果，命中缓存等于点了没反应。
+   */
+  @IsOptional()
+  @IsBoolean()
+  forceRefresh?: boolean;
 }
