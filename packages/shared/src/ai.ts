@@ -260,6 +260,35 @@ export interface TodayRecommendation {
   weather: RecommendWeather | null;
   /** 推荐套装列表；locked / empty 时为空数组 */
   outfits: RecommendedOutfitView[];
+  /**
+   * 缓存已被标记过期（新增了当季衣物）。
+   *
+   * 为什么不直接重算：重算是 ~60s 的 AI 生成，录一件衣服就付一次代价不合理，
+   * 尤其连拍批量录入。改为回传标记、首页出提示条，由用户决定何时刷新。
+   */
+  cacheStale?: boolean;
+}
+
+/* ============================================================
+   今日推荐缓存：时段划分
+   ============================================================ */
+
+/** 推荐缓存时段：按穿衣决策节奏分三档，比「上午/下午」更贴合换装时机 */
+export type Timeslot = 'morning' | 'noon' | 'evening';
+
+/**
+ * 按小时推断所属时段（前后端共用，保证缓存键口径一致）。
+ *
+ * 晚间跨零点（17:00–次日 05:00）合为一档：深夜与傍晚的穿衣决策同属「今天剩下的时间」，
+ * 拆开会让 23 点和 18 点各生成一次，白付一次 AI 生成。
+ * @param date 基准时间，缺省取当前
+ * @returns 所属时段
+ */
+export function getTimeslot(date: Date = new Date()): Timeslot {
+  const h = date.getHours();
+  if (h >= 5 && h < 11) return 'morning';
+  if (h >= 11 && h < 17) return 'noon';
+  return 'evening';
 }
 
 /* ============================================================
