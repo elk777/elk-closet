@@ -55,11 +55,14 @@ export class GarmentController {
   /**
    * 从购物截图提取商品信息，不入库（供确认页预填，PRD 4.1 截图导入）。
    *
-   * 降级哲学与识别一致：提取失败返回 extracted=false，前端走
-   * 「先存截图稍后补」，不阻塞录入。
+   * 三态返回，前端据 reason 分流：
+   * - extracted=true：读到商品信息，进确认页预填
+   * - reason='irrelevant'：模型判定不是购物页面，前端拦下不弹表单
+   * - reason='error'：技术故障（无 vision / 图不可达 / 主备均失败），
+   *   仍走「先存截图稍后补」进确认页手填——公益站网关不稳，不能让超时堵死录入
    * @param user 当前登录用户（品类候选集按其分类表拼装）
    * @param dto 已上传的截图 URL（1~3 张）
-   * @returns 提取结果（字段可为 null）+ 裁出的商品图 URL（裁不出为 null），或失败标记
+   * @returns 提取结果 + 裁出的商品图 URL，或带 reason 的失败标记
    */
   @Post('extract-screenshot')
   async extractScreenshot(
@@ -67,12 +70,20 @@ export class GarmentController {
     @Body() dto: ExtractScreenshotDto,
   ) {
     try {
-      const { result, croppedImageUrl } =
+      const { result, croppedImageUrl, irrelevant } =
         await this.garments.extractScreenshot(user.id, dto.imageUrls);
+      if (irrelevant) {
+        return {
+          extracted: false,
+          reason: 'irrelevant',
+          message: '这几张图里没找到商品信息，请选订单页或商品详情页截图',
+        };
+      }
       return { extracted: true, result, croppedImageUrl };
     } catch {
       return {
         extracted: false,
+        reason: 'error',
         message: '没读出商品信息，可先存截图稍后补充',
       };
     }

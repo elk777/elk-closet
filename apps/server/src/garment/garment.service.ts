@@ -14,6 +14,7 @@ import { dirname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import {
+  isIrrelevantScreenshot,
   majorTypeOf,
   seasonOfMonth,
   type RecognitionResult,
@@ -179,9 +180,12 @@ export class GarmentService {
    * 截图场景下模型对品类的判断依据远弱于实物图，宁缺勿错）。
    * 提取成功后再尝试按模型给的 imageBox 裁出干净商品图当主图；
    * 裁剪是锦上添花，任何一步失败只影响 croppedImageUrl（置 null），不影响字段结果。
+   * 模型判定「这不是购物页面」时直接短路返回 irrelevant，跳过裁剪——省一次
+   * 图片下载 + sharp + 又拍云上传，且上层据此拦下不让用户面对空表单。
    * @param ownerId 当前登录用户 id
    * @param imageUrls 又拍云直传后的截图 URL（1~3 张）
    * @returns 提取结果 + 裁出的商品图 URL（裁不出为 null，前端回退整张截图）
+   *          + irrelevant 标记（true 表示非购物截图，此时 croppedImageUrl 恒 null）
    */
   async extractScreenshot(
     ownerId: string,
@@ -189,12 +193,18 @@ export class GarmentService {
   ): Promise<{
     result: ScreenshotExtractResult;
     croppedImageUrl: string | null;
+    irrelevant: boolean;
   }> {
     const { names } = await this.categories.namesOf(ownerId);
     let result = await this.ai.extractFromScreenshot({
       imageUrls,
       categories: names,
     });
+    // 非购物截图：裁剪无意义（模型连商品都没读到，bbox 不可信），提前收工
+    if (isIrrelevantScreenshot(result)) {
+      this.logger.warn('截图未读到任何商品字段且置信度极低，判为非购物截图，跳过裁剪');
+      return { result, croppedImageUrl: null, irrelevant: true };
+    }
     if (result.categoryGuess && !names.includes(result.categoryGuess)) {
       result = { ...result, categoryGuess: null };
     }
@@ -203,7 +213,7 @@ export class GarmentService {
       imageUrls[0],
       result.imageBox,
     );
-    return { result, croppedImageUrl };
+    return { result, croppedImageUrl, irrelevant: false };
   }
 
   /**

@@ -103,6 +103,44 @@ export const ScreenshotExtractSchema = z.object({
 });
 export type ScreenshotExtractResult = z.infer<typeof ScreenshotExtractSchema>;
 
+/**
+ * 判定「这张图不是购物截图」的置信度上限。
+ *
+ * 不复用 RECOGNITION_CONFIDENCE_THRESHOLD(0.75)：那是「读到了但建议核对」的
+ * 门槛，一张模糊却真实的订单截图可能就 0.5，按 0.75 拦会误杀。prompt 要求
+ * 非购物页面填 0，这里留到 0.2 是兜住模型给 0.05/0.1 的情况。
+ */
+export const SCREENSHOT_IRRELEVANT_MAX_CONFIDENCE = 0.2;
+
+/**
+ * 截图提取的失败原因。
+ *
+ * irrelevant=模型成功读图并判定不是购物页面（前端应拦下，不进确认表单）；
+ * error=技术故障（无 vision / 图不可达 / 主备均失败），前端仍走
+ * 「先囫囵存进去」进确认页手填——公益站网关不稳，不能让超时堵死录入。
+ */
+export type ScreenshotExtractFailReason = 'irrelevant' | 'error';
+
+/**
+ * 判定提取结果是否为非购物截图。
+ *
+ * 双条件取 AND：只看置信度会误杀模糊但真实的订单截图；只看字段全空会把
+ * 「确实读到页面但字段就是没写」误判成无关图。四字段任一读到即放行，
+ * 低置信度交由确认页的核对提示条处理。
+ * categoryGuess 不参与——它会被后端按用户分类表改写，不是模型原始信号；
+ * imageBox 也不参与——它答的是「图在哪」，风景图里模型照样能框出矩形。
+ * @param r 已过 Zod 校验的提取结果
+ * @returns true 表示应判为非购物截图
+ */
+export function isIrrelevantScreenshot(r: ScreenshotExtractResult): boolean {
+  const noFields =
+    r.name === null &&
+    r.brand === null &&
+    r.price === null &&
+    r.mainColor === null;
+  return noFields && r.confidence <= SCREENSHOT_IRRELEVANT_MAX_CONFIDENCE;
+}
+
 /* ============================================================
    能力二：搭配推荐
    ============================================================ */
