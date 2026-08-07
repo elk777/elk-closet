@@ -51,6 +51,12 @@ const saving = ref(false);
 const fromScreenshot = ref(false);
 /** 识别/提取结果提示条：failed=没读出来（先存后补），low=低置信度建议核对 */
 const recognitionNotice = ref<'' | 'failed' | 'low'>('');
+/**
+ * 入口页提示条：截图被判为非购物图时的说明。
+ * 常驻入口视图而非 toast——用户重选图时还得看得见原因，故 reset() 不清它，
+ * 只在下次选图开始时清。
+ */
+const entryNotice = ref('');
 /** 是否处于批次视图 */
 const showBatch = ref(false);
 /** 批次入橱进行中：入库是这里的异步过程，交给列表禁用按钮防连点重复创建 */
@@ -71,6 +77,7 @@ watch(
 
 /** 入口一：选图后按张数分流——单张走原流程，多张走批次流水线 */
 async function pickAndRecognize() {
+  entryNotice.value = ''; // 与截图导入共用入口视图，开始新一轮就清掉上次的提示
   const paths = await chooseOnly(MAX_BATCH_SIZE);
   if (!paths.length) return;
   if (paths.length > 1) {
@@ -133,18 +140,27 @@ async function saveBatch() {
 
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */
 async function pickScreenshotsAndExtract() {
+  entryNotice.value = '';
   const urls = await chooseAndUploadMany(3);
   if (!urls) return;
   fromScreenshot.value = true;
   cutoutImageUrl.value = null; // 截图分支不抠图，主图用截图/cropped 本身
   // 主图先用第一张截图顶着（先囫囵存进去），详情页引导之后补实物图
   imageUrl.value = urls[0];
-  const extracted = await extract(urls);
-  // 服务端裁出了干净商品图则替换主图（仍非实物图，pendingPhoto 语义不变）
-  if (extracted?.croppedImageUrl) {
-    imageUrl.value = extracted.croppedImageUrl;
+  const outcome = await extract(urls);
+  // 判定不是购物截图：清空主图退回入口视图，不弹确认表单让用户面对空表格
+  if (outcome.kind === 'irrelevant') {
+    imageUrl.value = '';
+    form.value = null;
+    recognitionNotice.value = '';
+    entryNotice.value = outcome.message;
+    return;
   }
-  const result = extracted?.result;
+  // 服务端裁出了干净商品图则替换主图（仍非实物图，pendingPhoto 语义不变）
+  if (outcome.kind === 'ok' && outcome.croppedImageUrl) {
+    imageUrl.value = outcome.croppedImageUrl;
+  }
+  const result = outcome.kind === 'ok' ? outcome.result : null;
   form.value = result
     ? {
         // 读不到的字段为 null：转 undefined 留空，让用户自填而非提交空串
@@ -211,6 +227,10 @@ function close() {
   <AppSheet v-else :model-value="show" title="添加衣物" subtitle="拍照或选图，自动识别品类、颜色、材质" @update:model-value="close">
     <!-- 未选图：两个并列入口 -->
     <view v-if="!imageUrl">
+      <!-- 截图被判为非购物图：常驻此处，重选时仍看得见原因 -->
+      <view v-if="entryNotice" class="notice notice--failed">
+        <text>{{ entryNotice }}</text>
+      </view>
       <view class="dz" @click="pickAndRecognize">
         <text class="dz__t">拍照 / 从相册选择</text>
         <text class="dz__s">平铺或挂拍、背景干净，自动抠图去背景 + 识别；可多选连拍</text>

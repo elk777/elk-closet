@@ -5,6 +5,7 @@
 import type {
   Garment,
   RecognitionResult,
+  ScreenshotExtractFailReason,
   ScreenshotExtractResult,
 } from '@zhiyi/shared';
 import { http } from './request';
@@ -73,10 +74,11 @@ export function cutoutGarment(imageUrl: string) {
 }
 
 /**
- * 截图提取响应：降级哲学与识别一致，用 extracted 标记成败。
+ * 截图提取响应：用 extracted 标记成败，失败再按 reason 分流。
  * - extracted=true 时带 result（字段可为 null——读不到不编造）与
  *   croppedImageUrl（服务端按模型 bbox 裁出的商品图；裁不出为 null，回退整张截图）
- * - extracted=false 时仅带 message，前端走「先存截图稍后补」
+ * - reason='irrelevant'：不是购物截图，前端拦下不弹确认表单
+ * - reason='error'：技术故障，前端仍走「先存截图稍后补」
  */
 export type ExtractScreenshotResponse =
   | {
@@ -84,7 +86,11 @@ export type ExtractScreenshotResponse =
       result: ScreenshotExtractResult;
       croppedImageUrl: string | null;
     }
-  | { extracted: false; message: string };
+  | {
+      extracted: false;
+      reason: ScreenshotExtractFailReason;
+      message: string;
+    };
 
 /**
  * 从购物截图提取商品信息（不入库，供确认页预填）。
