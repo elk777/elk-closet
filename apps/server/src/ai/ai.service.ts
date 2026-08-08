@@ -209,15 +209,8 @@ export class AiService {
         new Error('识别路由的模型无 vision 能力'),
       );
     }
-    // 逐张预检：任一截图不可达，模型读不到就会按 prompt 全 null，不如尽早降级
-    try {
-      await Promise.all(
-        input.imageUrls.map((u) => this.assertImageReachable(u)),
-      );
-    } catch (err) {
-      this.logger.warn(String(err));
-      throw new ScreenshotExtractFailedError(err);
-    }
+    // 预检已删：模型侧会自己抓图，抓不到按 prompt 返回全 null + confidence 0，
+    // 我们的 isIrrelevantScreenshot 能拦。5 秒预检在又拍云自有域名慢/网络抖时误杀正常图。
     try {
       return await this.callWithFallback('recognize', (p, model) =>
         p.extractScreenshot(input, model),
