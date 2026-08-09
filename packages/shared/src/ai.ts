@@ -53,6 +53,15 @@ export const RecognitionResultSchema = z.object({
   styleTags: z.array(z.string()).default([]),
   /** AI 自评置信度 0~1，低于阈值提示用户核对 */
   confidence: z.number().min(0).max(1),
+  /**
+   * 图中是否有可录入的服装/配饰。
+   *
+   * 其余字段都是必填且有兜底语义（品类猜不出落「其他」、主色总能取平均色），
+   * 模型没有「这不是衣服」的表达途径，只能硬凑一个结果——故单开此字段。
+   * 默认 true：模型漏返时退化为改动前行为，不因一个新字段让整条识别链路
+   * parse 失败而阻断录入生命线。
+   */
+  isGarment: z.boolean().default(true),
   /** AI 的额外发现，原样存 JSONB，不做结构约束 */
   extra: z.record(z.string(), z.unknown()).default({}),
 });
@@ -60,6 +69,28 @@ export type RecognitionResult = z.infer<typeof RecognitionResultSchema>;
 
 /** 低于此置信度，在确认页高亮提示用户核对 */
 export const RECOGNITION_CONFIDENCE_THRESHOLD = 0.75;
+
+/**
+ * 识别失败原因。
+ *
+ * irrelevant=模型成功读图并判定图中无衣物（前端应拦下，不进确认表单、不入橱）；
+ * error=技术故障（无 vision / 图不可达 / 主备均失败），前端仍走
+ * 「先囫囵存进去」进确认页手填——公益站网关不稳，不能让超时堵死录入。
+ */
+export type RecognizeFailReason = 'irrelevant' | 'error';
+
+/**
+ * 判定识别结果是否为「图中没有衣物」。
+ *
+ * 只认模型显式给出的 false，不掺 confidence：prompt 已把 confidence=0 用于
+ * 「无法查看或加载图片」那类技术故障，那种情况按录入生命线应当放行进表单，
+ * 混用会把网关抽风误判成非衣物图。字段缺省为 true，故不确定时一律放行。
+ * @param r 已过 Zod 校验的识别结果
+ * @returns true 表示图中没有可录入的衣物
+ */
+export function isNotGarment(r: RecognitionResult): boolean {
+  return r.isGarment === false;
+}
 
 /* ============================================================
    能力一之二：购物截图提取

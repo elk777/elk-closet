@@ -41,8 +41,12 @@ export function buildRecognitionSystemPrompt(
    - seasons（适用季节，数组，至少一项）：${SEASONS.join(' / ')}
 4. 无法确定品类时，category 填「其他」。
 5. 如果你无法查看或加载图片，禁止凭空猜测：category 填「其他」，confidence 填 0。
-6. colorHex 用 #RRGGBB 六位十六进制近似主色。
-7. confidence 为你对本次识别的自评置信度，0~1 的小数。
+6. 如果图片里根本没有服装或配饰（例如食物、菜谱、风景、聊天记录、纯文字截图、宠物），
+   isGarment 填 false，其余字段按格式填占位值即可，不要为它们编造有意义的内容。
+   只要画面里存在可录入的服装或配饰（含包包/帽子/首饰等），isGarment 就填 true；
+   拿不准时填 true。
+7. colorHex 用 #RRGGBB 六位十六进制近似主色。
+8. confidence 为你对本次识别的自评置信度，0~1 的小数。
 
 返回字段：
 {
@@ -56,6 +60,7 @@ export function buildRecognitionSystemPrompt(
   "formality": "休闲/日常/正式",
   "styleTags": ["极简", "通勤"],
   "confidence": 0.92,
+  "isGarment": true,
   "extra": {}
 }`;
 }
