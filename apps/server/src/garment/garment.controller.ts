@@ -32,21 +32,35 @@ export class GarmentController {
   /**
    * AI 识别衣物属性，不入库（供确认页预填）。
    *
-   * 识别失败不抛 500：返回 recognized=false，前端据此走「先存图后补」，
-   * 生命线不被 AI 波动阻断（PRD 5.6）。
+   * 三态返回，前端据 reason 分流（与 extract-screenshot 同构）：
+   * - recognized=true：识别到衣物，进确认页预填
+   * - reason='irrelevant'：模型判定图中没有衣物，前端拦下不弹表单
+   * - reason='error'：技术故障，仍走「先存图后补」进确认页手填，
+   *   生命线不被 AI 波动阻断（PRD 5.6）
    * @param user 当前登录用户（品类候选集按其分类表拼装）
    * @param dto 已上传的衣物图 URL
-   * @returns 识别结果，或失败标记
+   * @returns 识别结果，或带 reason 的失败标记
    */
   @Post('recognize')
   async recognize(@CurrentUser() user: User, @Body() dto: RecognizeGarmentDto) {
     try {
-      const result = await this.garments.recognize(user.id, dto.imageUrl);
+      const { result, notGarment } = await this.garments.recognize(
+        user.id,
+        dto.imageUrl,
+      );
+      if (notGarment) {
+        return {
+          recognized: false,
+          reason: 'irrelevant',
+          message: '这张图里没看到衣物，请拍一件衣服或配饰',
+        };
+      }
       return { recognized: true, result };
     } catch {
-      // 识别失败降级：告知前端可只存图后补，不阻塞录入
+      // 技术故障降级：告知前端可只存图后补，不阻塞录入
       return {
         recognized: false,
+        reason: 'error',
         message: '识别失败，可先存图稍后补充属性',
       };
     }

@@ -15,6 +15,7 @@ import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
 import {
   isIrrelevantScreenshot,
+  isNotGarment,
   majorTypeOf,
   seasonOfMonth,
   type RecognitionResult,
@@ -151,25 +152,37 @@ export class GarmentService {
    *
    * 品类候选集取自用户分类表（自定义分类要能被 AI 命中就必须进 prompt）；
    * AI 返回不在用户分类集内时归「其他」（与 prompt 内约定一致的双重兜底）。
+   * 模型判定图中无衣物时短路返回 notGarment，跳过品类裁剪——那些字段本就是
+   * 占位值，裁剪它们没有意义；上层据此拦下，不让用户面对一个凑出来的表单。
    * @param ownerId 当前登录用户 id
    * @param imageUrl 又拍云直传后的图 URL
-   * @returns 已过 Zod 校验、品类已按用户集裁剪的识别结果
+   * @returns 识别结果 + notGarment 标记（true 表示图中没有可录入的衣物）
    */
   async recognize(
     ownerId: string,
     imageUrl: string,
-  ): Promise<RecognitionResult> {
+  ): Promise<{ result: RecognitionResult; notGarment: boolean }> {
     const { names, majorTypes } = await this.categories.namesOf(ownerId);
     const result = await this.ai.recognize({ imageUrl, categories: names });
+    if (isNotGarment(result)) {
+      this.logger.warn('模型判定图中没有服装或配饰，不作为可录入结果返回');
+      return { result, notGarment: true };
+    }
     if (!names.includes(result.category)) {
       return {
-        ...result,
-        category: FALLBACK_CATEGORY,
-        majorType: majorTypeOf(FALLBACK_CATEGORY, majorTypes),
+        result: {
+          ...result,
+          category: FALLBACK_CATEGORY,
+          majorType: majorTypeOf(FALLBACK_CATEGORY, majorTypes),
+        },
+        notGarment: false,
       };
     }
     // majorType 以用户分类表登记的归属为准，防模型答非所问
-    return { ...result, majorType: majorTypeOf(result.category, majorTypes) };
+    return {
+      result: { ...result, majorType: majorTypeOf(result.category, majorTypes) },
+      notGarment: false,
+    };
   }
 
   /**
