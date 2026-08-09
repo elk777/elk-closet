@@ -75,15 +75,15 @@ watch(
   },
 );
 
-// 批次项被判非衣物会逐个移出队列；若整批都被移光，别把用户晾在空列表上，
-// 退回入口视图并说明原因（此时 showBatch 仍为 true，需主动收）
+// 批次项被判非衣物会逐个移出队列；若队列最终空了，别把用户晾在空列表上。
+// 文案只陈述「跳过了几张」——队列也可能是用户手动删空的，不能断言整批都非衣物
 watch(
   () => batch.items.value.length,
   (len) => {
     if (!showBatch.value || len > 0) return;
     if (!batch.skippedCount.value) return;
     showBatch.value = false;
-    entryNotice.value = `这 ${batch.skippedCount.value} 张图里都没识别到衣物，请拍衣服或配饰`;
+    entryNotice.value = `已跳过 ${batch.skippedCount.value} 张没识别到衣物的图，请拍衣服或配饰`;
     batch.clear();
   },
 );
