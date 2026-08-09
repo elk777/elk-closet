@@ -75,6 +75,19 @@ watch(
   },
 );
 
+// 批次项被判非衣物会逐个移出队列；若整批都被移光，别把用户晾在空列表上，
+// 退回入口视图并说明原因（此时 showBatch 仍为 true，需主动收）
+watch(
+  () => batch.items.value.length,
+  (len) => {
+    if (!showBatch.value || len > 0) return;
+    if (!batch.skippedCount.value) return;
+    showBatch.value = false;
+    entryNotice.value = `这 ${batch.skippedCount.value} 张图里都没识别到衣物，请拍衣服或配饰`;
+    batch.clear();
+  },
+);
+
 /** 入口一：选图后按张数分流——单张走原流程，多张走批次流水线 */
 async function pickAndRecognize() {
   entryNotice.value = ''; // 与截图导入共用入口视图，开始新一轮就清掉上次的提示
@@ -91,14 +104,23 @@ async function pickAndRecognize() {
   imageUrl.value = up.imageUrl;
   cutoutImageUrl.value = null;
   // 识别（读属性）与抠图（去背景）正交，前端并行、互不阻塞；两者失败都不阻断录入
-  const [rec, cut] = await Promise.all([
+  const [outcome, cut] = await Promise.all([
     recognize(up.imageUrl),
     cutout(up.imageUrl),
   ]);
-  form.value = rec; // 失败返回 null → 先存图后补
+  // 判定图中没有衣物：退回入口视图给提示，不让用户面对一个凑出来的表单
+  // （抠图结果一并丢弃——它本就不阻断录入，此时也没有归宿）
+  if (outcome.kind === 'not-garment') {
+    imageUrl.value = null;
+    form.value = null;
+    recognitionNotice.value = '';
+    entryNotice.value = outcome.message;
+    return;
+  }
+  form.value = outcome.kind === 'ok' ? outcome.result : null; // error → 先存图后补
   cutoutImageUrl.value = cut; // 抠出白底则确认页预览换它，null 回退原图
   recognitionNotice.value =
-    rec === null ? 'failed' : lowConfidence.value ? 'low' : '';
+    outcome.kind === 'error' ? 'failed' : lowConfidence.value ? 'low' : '';
 }
 
 /** 批次「继续拍」：追加到现有队列，不清空已有项 */
@@ -216,6 +238,7 @@ function close() {
     :uploading="batch.uploading.value"
     :saving="batchSaving"
     :closet-count="closetCount ?? 0"
+    :skipped-count="batch.skippedCount.value"
     @update:show="showBatch = false; close()"
     @continue-shoot="continueShoot"
     @update-draft="batch.updateDraft"

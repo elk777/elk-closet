@@ -32,6 +32,11 @@ export const MAX_BATCH_SIZE = 9;
 export function useBatchQueue() {
   const items = ref<BatchItem[]>([]);
   const { uploading, uploadEach } = useUpload();
+  /**
+   * 本批次被判为非衣物、已移出队列的张数。
+   * 静默移除会让人困惑（选了 9 张怎么剩 7 张），列表据此常驻一行说明。
+   */
+  const skippedCount = ref(0);
   /** 正在跑识别的项数，配合 MAX_CONCURRENT_RECOGNIZE 做闸门 */
   let running = 0;
   /** 等待进入识别的项 id */
@@ -113,16 +118,25 @@ export function useBatchQueue() {
     try {
       const { recognize, lowConfidence } = useRecognition();
       const { cutout } = useCutout();
-      const [draft, cut] = await Promise.all([
+      const [outcome, cut] = await Promise.all([
         recognize(item.imageUrl),
         cutout(item.imageUrl),
       ]);
+      // 图中没有衣物：直接移出队列，不占列表也不进 saveAll。
+      // 留在列表里标个状态是不够的——saveAll 连 failed 项都收（先存图后补），
+      // 一键入橱会把它写进衣橱，用户连手动删的机会都没有。
+      if (outcome.kind === 'not-garment') {
+        items.value = items.value.filter((it) => it.id !== id);
+        writeQueue(items.value);
+        skippedCount.value++;
+        return;
+      }
       patch(id, {
-        draft,
+        draft: outcome.kind === 'ok' ? outcome.result : null,
         cutoutImageUrl: cut,
         // 识别失败仍算有图可入橱，走「先存图后补」，只是标记为 failed 提示用户
-        status: draft ? 'ready' : 'failed',
-        lowConfidence: draft ? lowConfidence.value : false,
+        status: outcome.kind === 'ok' ? 'ready' : 'failed',
+        lowConfidence: outcome.kind === 'ok' ? lowConfidence.value : false,
       });
     } finally {
       running--;
@@ -186,11 +200,13 @@ export function useBatchQueue() {
   function clear(): void {
     items.value = [];
     waiting.length = 0;
+    skippedCount.value = 0;
     clearQueue();
   }
 
   return {
     items,
+    skippedCount,
     uploading,
     restore,
     addPaths,

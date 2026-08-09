@@ -21,6 +21,8 @@ const props = defineProps<{
   saving: boolean;
   /** 衣橱现有件数，用于批次完成的成就文案 */
   closetCount: number;
+  /** 本批次被判为非衣物、已移出列表的张数；用于说明数量对不上的原因 */
+  skippedCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -90,6 +92,11 @@ function toggle(id: string) {
     @update:model-value="emit('update:show', false)"
   >
     <view class="bq">
+      <!-- 非衣物图已被移出队列，此处说明数量差异，避免用户以为丢图 -->
+      <view v-if="skippedCount" class="bq-skipped">
+        <text>已跳过 {{ skippedCount }} 张没识别到衣物的图</text>
+      </view>
+
       <!-- 卡片列表 -->
       <view v-for="item in items" :key="item.id" class="bq-card">
         <view class="bq-card__row" @click="toggle(item.id)">
@@ -147,6 +154,7 @@ function toggle(id: string) {
 
 <style lang="scss" scoped>
 .bq { display: flex; flex-direction: column; gap: 16rpx; }
+.bq-skipped { padding: 16rpx 20rpx; border-radius: $zy-radius-sm; background: rgba(230, 162, 60, 0.1); font-size: 24rpx; line-height: 1.5; color: #b8863b; }
 .bq-card { border: 2rpx solid $zy-line; border-radius: $zy-radius-sm; background: $zy-surface; overflow: hidden; }
 .bq-card__row { display: flex; align-items: center; gap: 20rpx; padding: 20rpx; }
 .bq-card__img { width: 100rpx; height: 100rpx; border-radius: $zy-radius-sm; background: $zy-bg; flex-shrink: 0; }

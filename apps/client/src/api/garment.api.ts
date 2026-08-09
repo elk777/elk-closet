@@ -5,6 +5,7 @@
 import type {
   Garment,
   RecognitionResult,
+  RecognizeFailReason,
   ScreenshotExtractFailReason,
   ScreenshotExtractResult,
 } from '@zhiyi/shared';
@@ -31,13 +32,14 @@ export interface CreateGarmentPayload {
 }
 
 /**
- * 识别接口响应：后端不抛 500，用 recognized 标记成败。
+ * 识别接口响应：后端不抛 500，用 recognized 标记成败，失败再按 reason 分流。
  * - recognized=true 时带 result（完整识别属性）
- * - recognized=false 时仅带 message，前端走「先存图后补」
+ * - reason='irrelevant'：图中没有衣物，前端拦下不弹确认表单、不入橱
+ * - reason='error'：技术故障，前端仍走「先存图后补」
  */
 export type RecognizeResponse =
   | { recognized: true; result: RecognitionResult }
-  | { recognized: false; message: string };
+  | { recognized: false; reason: RecognizeFailReason; message: string };
 
 /**
  * AI 识别衣物属性（不入库）。
