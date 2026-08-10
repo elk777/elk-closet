@@ -32,23 +32,31 @@ export const RecognitionResultSchema = z.object({
    * 品类：候选集是用户级数据（分类表），schema 无法静态枚举——
    * 是否命中由后端 service 按用户分类集判断，未命中归「其他」
    */
-  category: z.string().min(1),
+  category: z.string().min(1).catch('其他'),
   /** 大类：服装 / 配饰 */
-  majorType: z.enum(MAJOR_TYPES),
-  /** 主色名，如「米白」 */
-  mainColor: z.string().min(1),
+  majorType: z.enum(MAJOR_TYPES).catch('服装'),
+  /**
+   * 主色名，如「米白」。
+   *
+   * 下面五个字段一律 .catch() 兜底而非放宽类型：非衣物图时 prompt 要求模型
+   * 「其余字段填占位值」，模型会给空串/全零色值，硬校验会让整个结果 parse 失败，
+   * isGarment=false 这个唯一有意义的信号也一起丢掉，最终被误判成技术故障。
+   * 兜底而非 optional：正常衣物图的字段语义与非空保证不变，调用方无需处理 undefined。
+   */
+  mainColor: z.string().min(1).catch(''),
   /** 近似色值，供色彩墙用 */
   colorHex: z
     .string()
-    .regex(/^#[0-9a-fA-F]{6}$/, 'colorHex 必须是 #RRGGBB'),
+    .regex(/^#[0-9a-fA-F]{6}$/, 'colorHex 必须是 #RRGGBB')
+    .catch('#000000'),
   /** 材质，自由文本 */
   material: z.string().default(''),
   /** 厚薄 */
-  thickness: z.enum(THICKNESS),
+  thickness: z.enum(THICKNESS).catch('中'),
   /** 适用季节，可多选 */
-  seasons: z.array(z.enum(SEASONS)).min(1),
+  seasons: z.array(z.enum(SEASONS)).min(1).catch([]),
   /** 正式度 */
-  formality: z.enum(FORMALITY),
+  formality: z.enum(FORMALITY).catch('休闲'),
   /** 风格标签，自由数组 → JSONB */
   styleTags: z.array(z.string()).default([]),
   /** AI 自评置信度 0~1，低于阈值提示用户核对 */
@@ -85,7 +93,10 @@ export type RecognizeFailReason = 'irrelevant' | 'error';
  * 只认模型显式给出的 false，不掺 confidence：prompt 已把 confidence=0 用于
  * 「无法查看或加载图片」那类技术故障，那种情况按录入生命线应当放行进表单，
  * 混用会把网关抽风误判成非衣物图。字段缺省为 true，故不确定时一律放行。
- * @param r 已过 Zod 校验的识别结果
+ *
+ * 非衣物图时其余字段是模型填的占位值，靠 schema 的 .catch() 兜底才过得了校验，
+ * 本判定不看它们。
+ * @param r 识别结果
  * @returns true 表示图中没有可录入的衣物
  */
 export function isNotGarment(r: RecognitionResult): boolean {
