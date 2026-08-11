@@ -70,6 +70,13 @@ export interface AiRouteConfig {
   model: string;
   vision: boolean;
   /**
+   * 可选：该能力单次调用的超时（毫秒），覆盖全局 AI_TIMEOUT_MS。
+   * 场景：全局值为最慢能力（试穿生图 1~3 分钟）而设，交互敏感的能力
+   * （如识别）配更紧的预算，主模型卡死时能赶在前端超时前切兜底返回。
+   * 对主/兜底两条腿都生效——预算属于能力而非某个模型。
+   */
+  timeoutMs?: number;
+  /**
    * 可选兜底路由：主「渠道+模型」失败时切到这里再试一次。
    * 场景：公益站/中转站上游按模型维度随时失效，主备常为同渠道不同模型。
    * 兜底模型须具备与主路由同等能力（如 vision），由配置者保证。
@@ -165,7 +172,7 @@ export const aiConfig = registerAs('ai', (): AiConfig => {
   // 渠道字段名 → AiChannelConfig 属性名
   const channelReg = /^AI_CHANNEL_(.+?)__(PROTOCOL|BASE_URL|API_KEY|PROXY)$/;
   const routeReg =
-    /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS|TRYON)__(CHANNEL|MODEL|VISION|FALLBACK_CHANNEL|FALLBACK_MODEL)$/;
+    /^AI_ROUTE_(RECOGNIZE|RECOMMEND|GUESS|TRYON)__(CHANNEL|MODEL|VISION|TIMEOUT_MS|FALLBACK_CHANNEL|FALLBACK_MODEL)$/;
 
   const routes: Record<AiAbility, AiRouteConfig> = {
     recognize: { channel: '', model: '', vision: false },
@@ -207,6 +214,8 @@ export const aiConfig = registerAs('ai', (): AiConfig => {
       if (field === 'CHANNEL') rt.channel = value.toLowerCase();
       else if (field === 'MODEL') rt.model = value;
       else if (field === 'VISION') rt.vision = value === 'true';
+      else if (field === 'TIMEOUT_MS')
+        rt.timeoutMs = value ? Number(value) : undefined;
       else if (field === 'FALLBACK_CHANNEL')
         fallbacks[ability].channel = value.toLowerCase();
       else if (field === 'FALLBACK_MODEL') fallbacks[ability].model = value;

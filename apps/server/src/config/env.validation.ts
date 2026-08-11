@@ -130,6 +130,20 @@ function validateAiConfig(raw: Record<string, unknown>): string[] {
       errors.push(`AI_ROUTE_${ability}__MODEL 不能为空`);
     }
 
+    // ── 能力级超时（可选）：整数毫秒，下限与全局 AI_TIMEOUT_MS 对齐，
+    //    防止把秒当毫秒填（如 30）导致所有调用瞬时超时 ──
+    const timeoutRaw = String(
+      raw[`AI_ROUTE_${ability}__TIMEOUT_MS`] ?? '',
+    ).trim();
+    if (timeoutRaw) {
+      const timeoutMs = Number(timeoutRaw);
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1000) {
+        errors.push(
+          `AI_ROUTE_${ability}__TIMEOUT_MS 非法：需为 ≥1000 的整数毫秒，当前「${timeoutRaw}」`,
+        );
+      }
+    }
+
     // ── 兜底路由（可选）：成对出现 + 渠道必须存在 ──
     const fbChannel = String(raw[`AI_ROUTE_${ability}__FALLBACK_CHANNEL`] ?? '')
       .trim()

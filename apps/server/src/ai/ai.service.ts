@@ -30,6 +30,7 @@ import type {
 } from '../config/configuration';
 import {
   AI_CHANNELS,
+  type AiCallOptions,
   type AiProvider,
   type GuessOutfitInput,
   type RecognizeInput,
@@ -112,28 +113,38 @@ export class AiService {
    *   重试，因为公益站/中转站的失败多为上游按模型维度失效，原地重试大概率还挂。
    * 两条路径都失败时抛最后一次的错误，由调用方按各能力语义降级。
    *
+   * 路由配了能力级超时（timeoutMs）时透传给每次调用（主/兜底均生效）：
+   * 预算属于能力而非某个模型，Provider 据此覆盖 client 默认超时并关闭 SDK 重试。
+   *
    * @param ability 能力名（用于路由查表与日志）
-   * @param invoke 实际调用：拿到 Provider 与 model 发起请求
+   * @param invoke 实际调用：拿到 Provider、model 与调用选项发起请求
    * @returns invoke 的成功结果
    */
   private async callWithFallback<T>(
     ability: AiAbility,
-    invoke: (provider: AiProvider, model: string) => Promise<T>,
+    invoke: (
+      provider: AiProvider,
+      model: string,
+      opts?: AiCallOptions,
+    ) => Promise<T>,
   ): Promise<T> {
     const route = this.routes[ability];
+    const opts = route.timeoutMs
+      ? { timeoutMs: route.timeoutMs }
+      : undefined;
     try {
-      return await invoke(this.providerOf(route), route.model);
+      return await invoke(this.providerOf(route), route.model, opts);
     } catch (first) {
       const fb = route.fallback;
       if (!fb) {
         this.logger.warn(`${ability} 失败，同路由重试一次：${String(first)}`);
-        return await invoke(this.providerOf(route), route.model);
+        return await invoke(this.providerOf(route), route.model, opts);
       }
       this.logger.warn(
         `${ability} 主路由失败（${route.channel}/${route.model}），` +
           `切换兜底（${fb.channel}/${fb.model}）：${String(first)}`,
       );
-      return await invoke(this.channels.get(fb.channel)!, fb.model);
+      return await invoke(this.channels.get(fb.channel)!, fb.model, opts);
     }
   }
 
@@ -182,8 +193,8 @@ export class AiService {
       throw new RecognitionFailedError(err);
     }
     try {
-      return await this.callWithFallback('recognize', (p, model) =>
-        p.recognize(input, model),
+      return await this.callWithFallback('recognize', (p, model, opts) =>
+        p.recognize(input, model, opts),
       );
     } catch (err) {
       this.logger.error(`识别主备均失败：${String(err)}`);
@@ -212,8 +223,8 @@ export class AiService {
     // 预检已删：模型侧会自己抓图，抓不到按 prompt 返回全 null + confidence 0，
     // 我们的 isIrrelevantScreenshot 能拦。5 秒预检在又拍云自有域名慢/网络抖时误杀正常图。
     try {
-      return await this.callWithFallback('recognize', (p, model) =>
-        p.extractScreenshot(input, model),
+      return await this.callWithFallback('recognize', (p, model, opts) =>
+        p.extractScreenshot(input, model, opts),
       );
     } catch (err) {
       this.logger.error(`截图提取主备均失败：${String(err)}`);
@@ -229,8 +240,8 @@ export class AiService {
    */
   async recommend(input: RecommendInput): Promise<RecommendOutput> {
     try {
-      return await this.callWithFallback('recommend', (p, model) =>
-        p.recommend(input, model),
+      return await this.callWithFallback('recommend', (p, model, opts) =>
+        p.recommend(input, model, opts),
       );
     } catch (err) {
       this.logger.error(`推荐主备均失败：${String(err)}`);
@@ -255,8 +266,8 @@ export class AiService {
     if (!route.vision) return { itemIds: [] };
     if (input.candidates.length === 0) return { itemIds: [] };
     try {
-      return await this.callWithFallback('guess', (p, model) =>
-        p.guessOutfitItems(input, model),
+      return await this.callWithFallback('guess', (p, model, opts) =>
+        p.guessOutfitItems(input, model, opts),
       );
     } catch (err) {
       // 尽力而为：主备均失败则空命中降级，不抛错阻塞打卡
@@ -276,8 +287,8 @@ export class AiService {
    */
   async tryOn(input: TryOnInput): Promise<string> {
     try {
-      return await this.callWithFallback('tryon', (p, model) =>
-        p.tryOn(input, model),
+      return await this.callWithFallback('tryon', (p, model, opts) =>
+        p.tryOn(input, model, opts),
       );
     } catch (err) {
       this.logger.error(`试穿主备均失败：${String(err)}`);

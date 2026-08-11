@@ -17,6 +17,7 @@ import type {
   TryOnInput,
 } from '@zhiyi/shared';
 import type {
+  AiCallOptions,
   AiClientOptions,
   AiProvider,
   GuessOutfitInput,
@@ -63,6 +64,21 @@ export class AnthropicProvider implements AiProvider {
   }
 
   /**
+   * 能力级调用选项 → SDK 的 per-request 选项。
+   *
+   * 配了紧超时就同时关掉 SDK 内建重试（默认 2 次）：重试会把能力的
+   * 超时预算翻三倍，且 AiService 已有主备兜底，原地重试无增量价值。
+   * 未配则返回 undefined，走 client 默认（AI_TIMEOUT_MS + 默认重试）。
+   */
+  private requestOptions(
+    opts?: AiCallOptions,
+  ): Anthropic.RequestOptions | undefined {
+    return opts?.timeoutMs
+      ? { timeout: opts.timeoutMs, maxRetries: 0 }
+      : undefined;
+  }
+
+  /**
    * 从 messages.create 的返回里稳健地取出第一个文本块内容。
    *
    * 为什么不直接 `message.content.find(...)`：部分兼容网关（如本项目用的
@@ -105,14 +121,16 @@ export class AnthropicProvider implements AiProvider {
   async recognize(
     input: RecognizeInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<RecognitionResult> {
-    const raw = await this.callModel(input, model);
+    const raw = await this.callModel(input, model, opts);
     return parseRecognition(raw);
   }
 
   async extractScreenshot(
     input: ScreenshotExtractInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<ScreenshotExtractResult> {
     // 多张截图同一次调用（同一件商品信息互补），url source 由 Anthropic 侧抓取
     const content: Anthropic.ContentBlockParam[] = [
@@ -125,12 +143,15 @@ export class AnthropicProvider implements AiProvider {
       ),
     ];
 
-    const message = await this.client.messages.create({
-      model,
-      max_tokens: 1024,
-      system: buildScreenshotExtractSystemPrompt(input.categories),
-      messages: [{ role: 'user', content }],
-    });
+    const message = await this.client.messages.create(
+      {
+        model,
+        max_tokens: 1024,
+        system: buildScreenshotExtractSystemPrompt(input.categories),
+        messages: [{ role: 'user', content }],
+      },
+      this.requestOptions(opts),
+    );
 
     return parseScreenshotExtract(this.extractText(message));
   }
@@ -138,20 +159,24 @@ export class AnthropicProvider implements AiProvider {
   async recommend(
     input: RecommendInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<RecommendOutput> {
-    const message = await this.client.messages.create({
-      model,
-      // 推荐是结构化 JSON 任务，无需模型长篇推理。关掉 thinking：
-      // 推理型模型（如 mimo）默认会先输出大段思考再出正文，实测单次耗时
-      // 从 ~26s 降到 ~3.5s，是今日推荐超时的主因。关思考后正文很短，
-      // max_tokens 1024 已足够（思考不再占预算，无截断风险）。
-      max_tokens: 1024,
-      thinking: { type: 'disabled' },
-      system: RECOMMEND_SYSTEM_PROMPT,
-      messages: [
-        { role: 'user', content: buildRecommendUserPrompt(input) },
-      ],
-    });
+    const message = await this.client.messages.create(
+      {
+        model,
+        // 推荐是结构化 JSON 任务，无需模型长篇推理。关掉 thinking：
+        // 推理型模型（如 mimo）默认会先输出大段思考再出正文，实测单次耗时
+        // 从 ~26s 降到 ~3.5s，是今日推荐超时的主因。关思考后正文很短，
+        // max_tokens 1024 已足够（思考不再占预算，无截断风险）。
+        max_tokens: 1024,
+        thinking: { type: 'disabled' },
+        system: RECOMMEND_SYSTEM_PROMPT,
+        messages: [
+          { role: 'user', content: buildRecommendUserPrompt(input) },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     return parseRecommend(this.extractText(message));
   }
@@ -159,6 +184,7 @@ export class AnthropicProvider implements AiProvider {
   async guessOutfitItems(
     input: GuessOutfitInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<GuessOutfitResult> {
     // 多图内容块：打卡照在前，其后每个候选「先文本标注 id/简述，再贴图」，
     // 让模型能把视觉命中对应回具体 id。
@@ -172,12 +198,15 @@ export class AnthropicProvider implements AiProvider {
       content.push({ type: 'image', source: { type: 'url', url: c.imageUrl } });
     }
 
-    const message = await this.client.messages.create({
-      model,
-      max_tokens: 1024,
-      system: GUESS_OUTFIT_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content }],
-    });
+    const message = await this.client.messages.create(
+      {
+        model,
+        max_tokens: 1024,
+        system: GUESS_OUTFIT_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content }],
+      },
+      this.requestOptions(opts),
+    );
 
     return parseGuessOutfit(this.extractText(message));
   }
@@ -199,26 +228,31 @@ export class AnthropicProvider implements AiProvider {
    * 调用 Anthropic messages 接口做 vision 识别。
    * @param input 衣物图 URL + 用户品类候选集（拼进 system prompt）
    * @param model 使用的模型名
+   * @param opts 单次调用选项（能力级超时等）
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
   private async callModel(
     input: RecognizeInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<string> {
-    const message = await this.client.messages.create({
-      model,
-      max_tokens: 1024,
-      system: buildRecognitionSystemPrompt(input.categories),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'url', url: input.imageUrl } },
-            { type: 'text', text: RECOGNITION_USER_PROMPT },
-          ],
-        },
-      ],
-    });
+    const message = await this.client.messages.create(
+      {
+        model,
+        max_tokens: 1024,
+        system: buildRecognitionSystemPrompt(input.categories),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'url', url: input.imageUrl } },
+              { type: 'text', text: RECOGNITION_USER_PROMPT },
+            ],
+          },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     // 取第一个文本块作为返回
     return this.extractText(message);

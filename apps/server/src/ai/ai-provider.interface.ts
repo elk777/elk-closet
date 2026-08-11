@@ -33,12 +33,28 @@ export const AI_CHANNELS = Symbol('AI_CHANNELS');
 export interface AiClientOptions {
   baseUrl?: string;
   apiKey: string;
+  /** 渠道 client 默认超时（毫秒），可被 AiCallOptions.timeoutMs 按调用覆盖 */
   timeoutMs: number;
   /**
    * 可选 HTTP(S) 代理 URL（如 http://127.0.0.1:7890）。
    * 仅本机开发连需代理的中转站时用，生产直连留空——配了则给 SDK 挂 undici ProxyAgent。
    */
   proxyUrl?: string;
+}
+
+/**
+ * 单次能力调用的可选项（由 AiService 从能力路由解析后传入）。
+ *
+ * 与 AiClientOptions 的分工：client 级 timeoutMs 是渠道默认值（AI_TIMEOUT_MS，
+ * 为最慢的图像生成而设），本选项按能力覆盖单次调用——如识别配 30s，
+ * 主模型卡死时能赶在前端 60s 超时前切兜底返回，不被全局 180s 拖死。
+ *
+ * 实现约定：配了 timeoutMs 的调用必须同时关闭 SDK 内建重试（默认 2 次，
+ * 会把超时预算翻三倍；主备兜底已由 AiService 承担，原地重试无增量价值）。
+ */
+export interface AiCallOptions {
+  /** 本次调用的超时（毫秒），覆盖渠道 client 默认值 */
+  timeoutMs?: number;
 }
 
 /** 识别入参：一张衣物图 + 该用户的品类候选集 */
@@ -96,9 +112,14 @@ export interface AiProvider {
    *
    * @param input 待识别的衣物图
    * @param model 本次调用使用的模型名（由能力路由传入，Provider 不再焊死单一 model）
+   * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 已过 Zod 校验的结构化识别结果
    */
-  recognize(input: RecognizeInput, model: string): Promise<RecognitionResult>;
+  recognize(
+    input: RecognizeInput,
+    model: string,
+    opts?: AiCallOptions,
+  ): Promise<RecognitionResult>;
 
   /**
    * 从购物截图提取商品信息（PRD 4.1「从截图/订单导入」）。
@@ -110,11 +131,13 @@ export interface AiProvider {
    *
    * @param input 购物截图 + 品类候选集
    * @param model 本次调用使用的模型名（由能力路由传入）
+   * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 已过 Zod 校验的提取结果
    */
   extractScreenshot(
     input: ScreenshotExtractInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<ScreenshotExtractResult>;
 
   /**
@@ -128,9 +151,14 @@ export interface AiProvider {
    *
    * @param input 推荐输入契约（衣橱摘要 / 天气 / 偏好）
    * @param model 本次调用使用的模型名（由能力路由传入）
+   * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 已过 Zod 校验的推荐结果
    */
-  recommend(input: RecommendInput, model: string): Promise<RecommendOutput>;
+  recommend(
+    input: RecommendInput,
+    model: string,
+    opts?: AiCallOptions,
+  ): Promise<RecommendOutput>;
 
   /**
    * 预猜打卡照里穿了衣橱哪几件（PRD 4.7 系统预猜）。
@@ -143,11 +171,13 @@ export interface AiProvider {
    *
    * @param input 打卡照 + 候选衣橱清单
    * @param model 本次调用使用的模型名（由能力路由传入）
+   * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 已过 Zod 校验的预猜结果（命中的衣物 id）
    */
   guessOutfitItems(
     input: GuessOutfitInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<GuessOutfitResult>;
 
   /**
@@ -161,7 +191,8 @@ export interface AiProvider {
    *
    * @param input 全身照 + 本套单品图（含简述）+ 可选场合/风格
    * @param model 本次调用使用的模型名（由能力路由传入，如 gpt-image-2）
+   * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 合成上身图的 base64（不含 data: 前缀）
    */
-  tryOn(input: TryOnInput, model: string): Promise<string>;
+  tryOn(input: TryOnInput, model: string, opts?: AiCallOptions): Promise<string>;
 }

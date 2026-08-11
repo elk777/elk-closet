@@ -18,6 +18,7 @@ import type {
   TryOnResult,
 } from '@zhiyi/shared';
 import type {
+  AiCallOptions,
   AiClientOptions,
   AiProvider,
   GuessOutfitInput,
@@ -72,44 +73,64 @@ export class OpenAiProvider implements AiProvider {
     });
   }
 
+  /**
+   * 能力级调用选项 → SDK 的 per-request 选项。
+   *
+   * 配了紧超时就同时关掉 SDK 内建重试（默认 2 次）：重试会把能力的
+   * 超时预算翻三倍，且 AiService 已有主备兜底，原地重试无增量价值。
+   * 未配则返回 undefined，走 client 默认（AI_TIMEOUT_MS + 默认重试）。
+   */
+  private requestOptions(
+    opts?: AiCallOptions,
+  ): OpenAI.RequestOptions | undefined {
+    return opts?.timeoutMs
+      ? { timeout: opts.timeoutMs, maxRetries: 0 }
+      : undefined;
+  }
+
   async recognize(
     input: RecognizeInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<RecognitionResult> {
-    const raw = await this.callModel(input, model);
+    const raw = await this.callModel(input, model, opts);
     return parseRecognition(raw);
   }
 
   async extractScreenshot(
     input: ScreenshotExtractInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<ScreenshotExtractResult> {
     // 多张截图同一次调用：同一件商品信息互补（订单页+详情页），矛盾以 prompt 约定裁决
     const dataUrls = await Promise.all(
       input.imageUrls.map((u) => this.urlToDataUrl(u)),
     );
-    const completion = await this.client.chat.completions.create({
-      model,
-      // 与识别对齐：推理模型思考链与正文共用预算
-      max_tokens: 4000,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content: buildScreenshotExtractSystemPrompt(input.categories),
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: SCREENSHOT_EXTRACT_USER_PROMPT },
-            ...dataUrls.map((url) => ({
-              type: 'image_url' as const,
-              image_url: { url },
-            })),
-          ],
-        },
-      ],
-    });
+    const completion = await this.client.chat.completions.create(
+      {
+        model,
+        // 与识别对齐：推理模型思考链与正文共用预算
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: buildScreenshotExtractSystemPrompt(input.categories),
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: SCREENSHOT_EXTRACT_USER_PROMPT },
+              ...dataUrls.map((url) => ({
+                type: 'image_url' as const,
+                image_url: { url },
+              })),
+            ],
+          },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     const text = completion.choices[0]?.message?.content;
     if (!text) {
@@ -121,18 +142,22 @@ export class OpenAiProvider implements AiProvider {
   async recommend(
     input: RecommendInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<RecommendOutput> {
-    const completion = await this.client.chat.completions.create({
-      model,
-      // 推理模型的思考过程与正文共用预算，给足以免 JSON 被截断（Unterminated）
-      max_tokens: 4000,
-      // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: RECOMMEND_SYSTEM_PROMPT },
-        { role: 'user', content: buildRecommendUserPrompt(input) },
-      ],
-    });
+    const completion = await this.client.chat.completions.create(
+      {
+        model,
+        // 推理模型的思考过程与正文共用预算，给足以免 JSON 被截断（Unterminated）
+        max_tokens: 4000,
+        // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: RECOMMEND_SYSTEM_PROMPT },
+          { role: 'user', content: buildRecommendUserPrompt(input) },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     const text = completion.choices[0]?.message?.content;
     if (!text) {
@@ -144,6 +169,7 @@ export class OpenAiProvider implements AiProvider {
   async guessOutfitItems(
     input: GuessOutfitInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<GuessOutfitResult> {
     // 多图内容块：打卡照在前，其后每个候选「先文本标注 id/简述，再贴图」，
     // 让模型能把视觉命中对应回具体 id。
@@ -157,15 +183,18 @@ export class OpenAiProvider implements AiProvider {
       content.push({ type: 'image_url', image_url: { url: c.imageUrl } });
     }
 
-    const completion = await this.client.chat.completions.create({
-      model,
-      max_tokens: 1024,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: GUESS_OUTFIT_SYSTEM_PROMPT },
-        { role: 'user', content },
-      ],
-    });
+    const completion = await this.client.chat.completions.create(
+      {
+        model,
+        max_tokens: 1024,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: GUESS_OUTFIT_SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     const text = completion.choices[0]?.message?.content;
     if (!text) {
@@ -178,34 +207,39 @@ export class OpenAiProvider implements AiProvider {
    * 调用 OpenAI chat.completions 做 vision 识别。
    * @param input 衣物图 URL + 用户品类候选集（拼进 system prompt）
    * @param model 使用的模型名
+   * @param opts 单次调用选项（能力级超时等）
    * @returns 模型返回的纯文本（期望为 JSON 串）
    */
   private async callModel(
     input: RecognizeInput,
     model: string,
+    opts?: AiCallOptions,
   ): Promise<string> {
     // 传 base64 而非外链：部分网关上游（如 42w，2026-07-29 起）拒收 URL 形态的
     // image_url；data URL 是 OpenAI vision 协议标准形态，各渠道通吃，
     // 也免去模型侧再抓一次图的不确定性。
     const imageDataUrl = await this.urlToDataUrl(input.imageUrl);
-    const completion = await this.client.chat.completions.create({
-      model,
-      // 推理型模型（国产系普遍）思考链与正文共用预算，1024 会被思考吃光
-      // 致 finish_reason=length、content 为空。与 recommend 对齐给到 4000。
-      max_tokens: 4000,
-      // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: buildRecognitionSystemPrompt(input.categories) },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: RECOGNITION_USER_PROMPT },
-            { type: 'image_url', image_url: { url: imageDataUrl } },
-          ],
-        },
-      ],
-    });
+    const completion = await this.client.chat.completions.create(
+      {
+        model,
+        // 推理型模型（国产系普遍）思考链与正文共用预算，1024 会被思考吃光
+        // 致 finish_reason=length、content 为空。与 recommend 对齐给到 4000。
+        max_tokens: 4000,
+        // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: buildRecognitionSystemPrompt(input.categories) },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: RECOGNITION_USER_PROMPT },
+              { type: 'image_url', image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
+      },
+      this.requestOptions(opts),
+    );
 
     const text = completion.choices[0]?.message?.content;
     if (!text) {
@@ -221,20 +255,28 @@ export class OpenAiProvider implements AiProvider {
    * 图片 URL 是又拍云公开 CDN，直连抓取（不走渠道代理——代理只为连图像 API 网关）。
    * @param input 全身照 + 本套单品图 + 可选场合/风格
    * @param model 图像模型名（如 gpt-image-2）
+   * @param opts 单次调用选项（能力级超时等），试穿通常不配、走 client 默认长超时
    * @returns 合成上身图的 base64（不含 data: 前缀）
    */
-  async tryOn(input: TryOnInput, model: string): Promise<string> {
+  async tryOn(
+    input: TryOnInput,
+    model: string,
+    opts?: AiCallOptions,
+  ): Promise<string> {
     // 底图在前、单品图在后：与 prompt 的「第一张是人物、其余是单品」表述对应
     const files = await Promise.all([
       this.urlToFile(input.bodyPhotoUrl, 'body'),
       ...input.items.map((it, i) => this.urlToFile(it.imageUrl, `item-${i}`)),
     ]);
 
-    const res = await this.client.images.edit({
-      model,
-      image: files,
-      prompt: buildTryOnPrompt(input),
-    });
+    const res = await this.client.images.edit(
+      {
+        model,
+        image: files,
+        prompt: buildTryOnPrompt(input),
+      },
+      this.requestOptions(opts),
+    );
 
     // 两种返回形态都要兼容：小图常直接给 b64_json，大图不少网关会转存 CDN
     // 只回 url（省响应体）。统一收敛成 b64 交上层落对象存储。
