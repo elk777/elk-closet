@@ -1,8 +1,9 @@
 /**
- * GarmentService：衣物录入与查询的业务核心（PRD 4.1 / 4.2 / 4.3）。
+ * GarmentService：衣物录入、查询与生命周期维护的业务核心（PRD 4.1 / 4.2 / 4.3）。
  *
  * 录入主链路：前端直传又拍云拿到图 URL → recognize 识别属性（不入库）
  * → 用户确认 → create 入库。识别失败或用户跳过时，create 走「先存图后补」路径。
+ * 入库后可 update 修正属性/换主图、softDelete 软删（PRD 5.6.2）。
  *
  * 数据边界：
  * - 结构化字段落列，seasons / styleTags / extra 落 JSONB
@@ -22,11 +23,13 @@ import {
   type ScreenshotExtractResult,
   type Season,
 } from '@zhiyi/shared';
+import type { Prisma } from '../prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { CategoryService, FALLBACK_CATEGORY } from '../category/category.service';
 import { UploadService } from '../upload/upload.service';
 import type { CreateGarmentDto } from './dto/create-garment.dto';
+import type { UpdateGarmentDto } from './dto/update-garment.dto';
 
 /** 先存图后补时，缺省属性的兜底值（PRD 5.6.1：不阻塞录入）；品类兜底见 FALLBACK_CATEGORY */
 const FALLBACK = {
@@ -493,6 +496,91 @@ export class GarmentService {
     });
     await this.dropRecommendationUsing(ownerId, id);
     return updated;
+  }
+
+  /**
+   * 更新衣物属性 / 换主图（PRD 4.3 编辑）。
+   *
+   * 部分更新：Prisma 视 undefined 为「跳过该列」，与 DTO 的「undefined=不改」
+   * 天然对齐，字段直接透传；brand / price 传 null 落库清空。
+   * majorType 不收客户端值——品类变更时按用户分类表重推导（与 create 同规则）。
+   * @param ownerId 归属用户 id
+   * @param id 衣物 id
+   * @param dto 更新入参（全字段可选）
+   * @returns 更新后的衣物
+   */
+  async update(ownerId: string, id: string, dto: UpdateGarmentDto) {
+    const existing = await this.detail(ownerId, id); // 归属与存在性校验（不存在则抛 404）
+
+    const data: Prisma.GarmentUpdateInput = {
+      name: dto.name,
+      mainColor: dto.mainColor,
+      material: dto.material,
+      thickness: dto.thickness,
+      seasons: dto.seasons,
+      formality: dto.formality,
+      brand: dto.brand,
+      price: dto.price,
+    };
+
+    if (dto.category !== undefined) {
+      // 未命中用户分类表归「其他」，majorType 一律按分类表推导——与 create 一致，防前后端不同步
+      const { names, majorTypes } = await this.categories.namesOf(ownerId);
+      const category = names.includes(dto.category)
+        ? dto.category
+        : FALLBACK_CATEGORY;
+      data.category = category;
+      data.majorType = majorTypeOf(category, majorTypes);
+    }
+
+    if (dto.originalImageUrl !== undefined) {
+      // 换主图：旧抠图属于旧照片，必须一起换掉（新图没抠出就置空），不得残留在新图下
+      data.originalImageUrl = dto.originalImageUrl;
+      data.cutoutImageUrl = dto.cutoutImageUrl ?? null;
+      // 换图即解除「待补实物图」标记，闭环截图导入的引导；规则收在服务端，客户端无感
+      data.extra = {
+        ...((existing.extra ?? {}) as Record<string, unknown>),
+        pendingPhoto: false,
+      } as object;
+    }
+
+    const updated = await this.prisma.garment.update({ where: { id }, data });
+
+    // 属性已变，引用它的推荐缓存是错误结果而非过时结果，直接清（与归档同款语义）
+    await this.dropRecommendationUsing(ownerId, id);
+
+    // 季节集合变化可能把它扩入当季候选池，同 create 的标脏语义；是否真含当季由标脏方法把关
+    if (dto.seasons !== undefined) {
+      const prev = new Set(existing.seasons as string[]);
+      const next = new Set(dto.seasons);
+      const changed =
+        prev.size !== next.size || [...next].some((s) => !prev.has(s));
+      if (changed) {
+        await this.markRecommendationStale(ownerId, dto.seasons as Season[]);
+      }
+    }
+
+    return updated;
+  }
+
+  /**
+   * 软删除衣物（PRD 5.6.2）：置 deletedAt 标记，不物理删。
+   *
+   * list / detail 均已按 deletedAt 过滤，删除后全站自然不可见；数据保留，
+   * 关联穿搭记录的历史真实性与将来的恢复能力都以此为前提。
+   * @param ownerId 归属用户 id
+   * @param id 衣物 id
+   * @returns 软删后的衣物
+   */
+  async softDelete(ownerId: string, id: string) {
+    await this.detail(ownerId, id); // 归属与存在性校验（已删的重复删同样 404）
+    const deleted = await this.prisma.garment.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+    // 推荐里摆着一件已删单品是错误结果，必须清
+    await this.dropRecommendationUsing(ownerId, id);
+    return deleted;
   }
 
   /**

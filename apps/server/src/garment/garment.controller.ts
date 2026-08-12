@@ -1,17 +1,20 @@
 /**
- * 衣物控制器：录入生命线的对外接口（PRD 4.1）。
+ * 衣物控制器：录入生命线与衣物生命周期的对外接口（PRD 4.1 / 4.3）。
  *
  * 全部受 JwtAuthGuard 保护，衣物归属当前登录用户。
  * 录入两步：先 recognize 拿 AI 预填 → 用户确认 → create 入库；
  * 或跳过识别直接 create（先存图后补）。
+ * 入库后：PUT 编辑（部分更新）、DELETE 软删，及 wear / archive 动作路由。
  */
 
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -22,6 +25,7 @@ import { CutoutGarmentDto } from './dto/cutout-garment.dto';
 import { ExtractScreenshotDto } from './dto/extract-screenshot.dto';
 import { RecognizeGarmentDto } from './dto/recognize-garment.dto';
 import { SetArchivedDto } from './dto/set-archived.dto';
+import { UpdateGarmentDto } from './dto/update-garment.dto';
 import { GarmentService } from './garment.service';
 
 @Controller('garments')
@@ -148,6 +152,38 @@ export class GarmentController {
   @Get(':id')
   findOne(@CurrentUser() user: User, @Param('id') id: string) {
     return this.garments.detail(user.id, id);
+  }
+
+  /**
+   * 更新衣物（编辑属性 / 换主图，PRD 4.3）。
+   *
+   * 用 PUT 承载「部分更新」：wx.request 不支持 PATCH，动词语义的出入
+   * 以注释声明（undefined=不改，brand/price 传 null=清空，详见 DTO）。
+   * 非本人 / 已删除的衣物一律 404，不泄露存在性。
+   * @param user 当前登录用户
+   * @param id 衣物 id
+   * @param dto 更新入参（全字段可选）
+   * @returns 更新后的衣物
+   */
+  @Put(':id')
+  update(
+    @CurrentUser() user: User,
+    @Param('id') id: string,
+    @Body() dto: UpdateGarmentDto,
+  ) {
+    return this.garments.update(user.id, id, dto);
+  }
+
+  /**
+   * 删除衣物（软删，PRD 5.6.2）：置 deletedAt 标记，不物理删，
+   * 关联穿搭记录与恢复能力得以保留；查询已过滤，删后全站不可见。
+   * @param user 当前登录用户
+   * @param id 衣物 id
+   * @returns 软删后的衣物
+   */
+  @Delete(':id')
+  remove(@CurrentUser() user: User, @Param('id') id: string) {
+    return this.garments.softDelete(user.id, id);
   }
 
   /**
