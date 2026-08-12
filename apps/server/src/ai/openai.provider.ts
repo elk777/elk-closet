@@ -7,6 +7,7 @@
  */
 
 import OpenAI, { toFile } from 'openai';
+import sharp from 'sharp';
 import { ProxyAgent } from 'undici';
 import type {
   GuessOutfitResult,
@@ -46,6 +47,11 @@ import {
   parseGuessOutfit,
 } from './guess-outfit.prompt';
 import { buildTryOnPrompt } from './tryon.prompt';
+
+/** 喂给 vision 模型的图片长边上限（像素）：属性判定/截图提取不需要更高分辨率 */
+const VISION_MAX_EDGE = 1024;
+/** 喂图统一转 JPEG 的压缩质量 */
+const VISION_JPEG_QUALITY = 80;
 
 export class OpenAiProvider implements AiProvider {
   private readonly client: OpenAI;
@@ -295,7 +301,14 @@ export class OpenAiProvider implements AiProvider {
   }
 
   /**
-   * 抓取图片 URL 转成 data URL（base64），供 vision 消息内联传图。
+   * 抓取图片 URL，压到 vision 适用尺寸后转 data URL（base64）内联传图。
+   *
+   * 为什么先缩图（2026-08-11 真机超时复盘）：手机原图/信息密集长截图动辄
+   * 2MB+，推理型 vision 模型处理原始大图单次要 20~40s（同图缩到 1024 后
+   * 实测 5.7s），会烧穿识别的 30s 能力预算导致主备双双超时。属性判定不
+   * 需要高分辨率，统一缩到长边 ≤1024 的 JPEG：EXIF 自动摆正（手机竖拍
+   * 不再横着喂）、透明底铺白（抠图 PNG 无 alpha 可用）。
+   * sharp 读不了的罕见格式回退原图——宁可慢也不断链路。
    * 图片 URL 是又拍云公开 CDN，直连抓取（不走渠道代理）。
    * @param url 公开可访问的图片 URL
    */
@@ -304,9 +317,22 @@ export class OpenAiProvider implements AiProvider {
     if (!resp.ok) {
       throw new Error(`抓取识别图失败(${resp.status})：${url}`);
     }
-    const type = resp.headers.get('content-type') ?? 'image/jpeg';
-    const b64 = Buffer.from(await resp.arrayBuffer()).toString('base64');
-    return `data:${type};base64,${b64}`;
+    const original = Buffer.from(await resp.arrayBuffer());
+    try {
+      const resized = await sharp(original)
+        .rotate()
+        .resize(VISION_MAX_EDGE, VISION_MAX_EDGE, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: VISION_JPEG_QUALITY })
+        .toBuffer();
+      return `data:image/jpeg;base64,${resized.toString('base64')}`;
+    } catch {
+      const type = resp.headers.get('content-type') ?? 'image/jpeg';
+      return `data:${type};base64,${original.toString('base64')}`;
+    }
   }
 
   /**
