@@ -127,6 +127,45 @@ export function detailGarment(id: string) {
   return http.get<Garment>(`/garments/${id}`);
 }
 
+/**
+ * 更新衣物入参：全字段可选——undefined=不改，brand/price 传 null 表示清空。
+ * 不含 majorType（服务端按品类重推导，不信客户端）、styleTags（AI 产出只读）、
+ * colorHex（无取色 UI，暂不可改）。
+ */
+export interface UpdateGarmentPayload {
+  name?: string;
+  category?: string;
+  mainColor?: string;
+  material?: string;
+  thickness?: string;
+  seasons?: string[];
+  formality?: string;
+  brand?: string | null;
+  price?: number | null;
+  /** 提供即视为换主图，服务端随之解除截图导入的 pendingPhoto 标记 */
+  originalImageUrl?: string;
+  /** 仅随 originalImageUrl 一起提交；null=新图抠不出，主图回退原图 */
+  cutoutImageUrl?: string | null;
+}
+
+/**
+ * 部分更新衣物属性/主图（wx.request 不支持 PATCH，以 PUT 承载部分更新语义）。
+ * @param id 衣物 id
+ * @param payload 变更字段集
+ * @returns 更新后的完整衣物
+ */
+export function updateGarment(id: string, payload: UpdateGarmentPayload) {
+  return http.put<Garment>(
+    `/garments/${id}`,
+    payload as unknown as Record<string, unknown>,
+  );
+}
+
+/** 删除衣物（软删，PRD 5.6.2）：置 deletedAt 不物理删，列表/详情随即不可见 */
+export function deleteGarment(id: string) {
+  return http.del<Garment>(`/garments/${id}`);
+}
+
 /** 记一次穿着：穿着次数 +1，上次穿着日期置为今天（PRD 4.7 数据飞轮起点） */
 export function recordWear(id: string) {
   return http.post<Garment>(`/garments/${id}/wear`);

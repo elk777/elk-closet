@@ -21,9 +21,10 @@
         />
       </view>
 
-      <!-- 截图导入的衣物：主图还是购物截图，提示补一张实物图 -->
-      <view v-if="pendingPhoto" class="pending-tip">
+      <!-- 截图导入的衣物：主图还是购物截图，整条可点直达编辑页换实物图 -->
+      <view v-if="pendingPhoto" class="pending-tip" @click="goEdit">
         <text>当前主图是购物截图，拍一张实物图会更好认哦</text>
+        <text class="pending-tip__go">去补一张 ›</text>
       </view>
 
       <view class="stats">
@@ -41,10 +42,11 @@
         </view>
       </view>
 
-      <!-- 名称 + 品类 + 闲置标记 -->
+      <!-- 名称 + 品类 + 闲置标记 + 编辑入口 -->
       <view class="title-row">
         <text class="title">{{ garment.name }}</text>
         <AppTag v-if="garment.archived" variant="dark">已闲置</AppTag>
+        <text class="edit-link" @click="goEdit">编辑</text>
       </view>
       <view class="chips">
         <AppTag>{{ garment.category }}</AppTag>
@@ -88,7 +90,7 @@
         </view>
       </view>
 
-      <!-- 第三层：操作（克制：记一次穿着 / 标记闲置） -->
+      <!-- 第三层：操作（记一次穿着 / 标记闲置；编辑在标题行右侧） -->
       <view class="actions">
         <AppButton :loading="acting" block @click="onWear">记一次穿着</AppButton>
         <AppButton type="secondary" block @click="onToggleArchive">
@@ -104,11 +106,12 @@
  * 衣物详情页（PRD 4.3 三层结构）：
  * 一眼看到（大图 + 累计穿着 / 单次成本 / 上次穿）→ 基本档案 → 操作。
  *
- * 操作克制到两个：记一次穿着（数据飞轮起点）、标记/取消闲置（断舍离清单）。
+ * 操作对齐 PRD 4.3 的三个：编辑（属性修正/换主图/删除的入口，在标题行）、
+ * 记一次穿着（数据飞轮起点）、标记/取消闲置（断舍离清单）。
  * 「出现在这些搭配里」的社交关系待搭配/日记模块落地后补。
  */
 import { computed, ref } from 'vue';
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { costPerWear, type Garment } from '@zhiyi/shared';
 import AppLoading from '../../components/base/AppLoading.vue';
 import AppButton from '../../components/base/AppButton.vue';
@@ -125,7 +128,7 @@ const loading = ref(true);
 const acting = ref(false);
 let garmentId = '';
 
-/** 待补实物图：截图导入入库时 extra 里种的标记（编辑改图能力落地后引导替换） */
+/** 待补实物图：截图导入入库时 extra 里种的标记；点击去编辑页换图，保存后服务端解除 */
 const pendingPhoto = computed(
   () => garment.value?.extra?.pendingPhoto === true,
 );
@@ -195,13 +198,20 @@ function goBack() {
   uni.navigateBack();
 }
 
+/** 进入编辑页：属性修正、换主图、删除都收在那边（本页操作区保持克制） */
+function goEdit() {
+  uni.navigateTo({ url: `/pages/garment/edit?id=${garmentId}` });
+}
+
 onLoad((query) => {
   garmentId = (query?.id as string) ?? '';
-  if (!garmentId) {
-    loading.value = false;
-    return;
-  }
-  load();
+  if (!garmentId) loading.value = false;
+});
+
+// 加载收敛到 onShow（唯一加载时机）：首次进入 onLoad→onShow 顺序保证 id 已就绪
+// 且只请求一次；编辑页保存返回时 onShow 再次触发，详情自动反映新值
+onShow(() => {
+  if (garmentId) load();
 });
 </script>
 
@@ -237,6 +247,10 @@ onLoad((query) => {
   background: $zy-bg;
 }
 .pending-tip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 12px;
   padding: 10px 14px;
   border-radius: $zy-radius-sm;
@@ -244,6 +258,10 @@ onLoad((query) => {
   font-size: 12px;
   line-height: 1.5;
   color: #b8863b;
+}
+.pending-tip__go {
+  flex-shrink: 0;
+  font-weight: 600;
 }
 .stats {
   display: flex;
@@ -279,6 +297,13 @@ onLoad((query) => {
   font-size: 20px;
   font-weight: 700;
   color: $zy-ink;
+}
+// 编辑入口：对齐 ghost 按钮的用色（透明底 + 次要文字），小字不抢主操作
+.edit-link {
+  margin-left: auto;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: $zy-ink-2;
 }
 .chips {
   display: flex;

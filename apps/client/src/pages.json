@@ -21,6 +21,12 @@
 			}
 		},
 		{
+			"path": "pages/garment/edit",
+			"style": {
+				"navigationBarTitleText": "编辑衣物"
+			}
+		},
+		{
 			"path": "pages/board/board",
 			"style": {
 				"navigationBarTitleText": "衣橱看板"
