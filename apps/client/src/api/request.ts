@@ -7,7 +7,7 @@
  * - 401 清登录态
  * - 网络异常统一提示
  *
- * 页面/store 只调 http.get/post，不直接碰 uni.request。
+ * 页面/store 只调 http.get/post/put/del，不直接碰 uni.request。
  */
 
 import { isApiSuccess, type ApiResponse } from '@zhiyi/shared';
@@ -25,7 +25,7 @@ export interface RequestOptions {
 }
 
 interface FullOptions extends RequestOptions {
-  // 微信小程序 wx.request 不支持 PATCH，动作型接口统一走 POST
+  // 微信小程序 wx.request 不支持 PATCH：动作型接口统一走 POST，资源部分更新走 PUT
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   url: string;
   data?: Record<string, unknown>;
@@ -85,4 +85,8 @@ export const http = {
     request<T>({ method: 'GET', url, ...opts }),
   post: <T>(url: string, data?: Record<string, unknown>, opts?: RequestOptions) =>
     request<T>({ method: 'POST', url, data, ...opts }),
+  put: <T>(url: string, data?: Record<string, unknown>, opts?: RequestOptions) =>
+    request<T>({ method: 'PUT', url, data, ...opts }),
+  del: <T>(url: string, opts?: RequestOptions) =>
+    request<T>({ method: 'DELETE', url, ...opts }),
 };
