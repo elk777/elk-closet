@@ -200,7 +200,7 @@ elk-closet/
 ### 1️⃣ 克隆与安装
 
 ```bash
-git clone <your-repo-url> elk-closet
+git clone https://github.com/elk777/elk-closet.git
 cd elk-closet
 pnpm install
 ```
