@@ -291,7 +291,10 @@ export class OpenAiProvider implements AiProvider {
       return first.b64_json;
     }
     if (first?.url) {
-      const resp = await fetch(first.url);
+      // 网关转存的 CDN 图可能较大，给足 60s；不给超时则半开连接会挂死整个试穿请求
+      const resp = await fetch(first.url, {
+        signal: AbortSignal.timeout(60_000),
+      });
       if (!resp.ok) {
         throw new Error(`抓取试穿结果图失败(${resp.status})：${first.url}`);
       }
@@ -344,7 +347,7 @@ export class OpenAiProvider implements AiProvider {
     url: string,
     name: string,
   ): Promise<Awaited<ReturnType<typeof toFile>>> {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
     if (!resp.ok) {
       throw new Error(`抓取试穿图失败(${resp.status})：${url}`);
     }
