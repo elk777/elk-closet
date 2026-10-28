@@ -50,8 +50,9 @@ export interface AiClientOptions {
  * 主模型卡死时能赶在客户端超时前切兜底返回，不被全局超时拖死
  * （客户端普通请求 60s、识别/截图 180s，均有能力级超时兜住）。
  *
- * 实现约定：配了 timeoutMs 的调用必须同时关闭 SDK 内建重试（默认 2 次，
- * 会把超时预算翻三倍；主备兜底已由 AiService 承担，原地重试无增量价值）。
+ * 实现约定：SDK 内建重试（默认 2 次）在所有调用上都恒关闭，与是否配了
+ * timeoutMs 无关；重试/兜底语义单点收敛在 AiService.callWithFallback，
+ * 两层都重试会把配额消耗与超时预算一起放大。
  */
 export interface AiCallOptions {
   /** 本次调用的超时（毫秒），覆盖渠道 client 默认值 */

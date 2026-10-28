@@ -4,8 +4,13 @@
  * 按能力路由分发：每个能力（识别/推荐/预猜/试穿）从路由表拿到「渠道 + 模型 + 是否 vision」，
  * 取对应渠道的 Provider 并把 model 作为入参调用；在其上包一层「主备切换/重试 + 降级」策略（PRD 5.5.4）：
  * - 配了兜底路由（AI_ROUTE_*__FALLBACK_*）：主「渠道+模型」失败直接切兜底再试一次
- * - 未配兜底：失败后同路由重试 1 次（历史行为）
+ * - 未配兜底且非 429：失败后同路由重试 1 次（历史行为）
+ * - 主路由 429（上游限流）：有兜底立即切，无兜底直接降级——限流是分钟级配额，
+ *   同路由重试只会再撞一次墙，纯粹浪费配额与延迟（优先于上一条生效）
  * - 仍失败按能力降级：识别抛错走「先存图后补」，推荐/试穿抛错提示稍后再试，预猜返回空命中手动选
+ *
+ * 重试语义只有本 service 一处：Provider 层已恒关 SDK 内建重试（maxRetries: 0），
+ * 避免双层重试把一次 429 放大成三次请求、把能力超时预算翻三倍。
  *
  * vision 判定下放到能力级：某能力路由标 vision=false 时（所选模型不支持传图），
  * 识别/预猜直接降级，不空调必失败的传图接口。推荐纯文本，不涉及 vision。
@@ -73,6 +78,22 @@ export class TryOnFailedError extends Error {
   }
 }
 
+/**
+ * 从 SDK 抛出的错误对象里取 HTTP 状态码，取不到返回 undefined。
+ *
+ * 为什么要单独取码：限流（429）与「模型不存在 / 网络抖动 / 解析失败」的
+ * 处置方式相反——前者换渠道才有救，原地重试只会再吃一次限流；后者可以
+ * 在原路由搏一次。OpenAI / Anthropic SDK 的 APIError 都把状态码挂在
+ * `status` 上；被代理或网关包装过的错误没有该字段，按普通失败处理，
+ * 行为与改造前一致（不会因取不到码而误判为限流）。
+ * @param err 任意被抛出的异常
+ * @returns number 型状态码；不存在或类型不符时 undefined
+ */
+function errorStatus(err: unknown): number | undefined {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -108,13 +129,16 @@ export class AiService {
   /**
    * 按「主路由 → 兜底路由」策略执行一次 AI 调用。
    *
-   * - 未配兜底：主路由失败后同路由重试 1 次（保持历史行为）。
+   * - 未配兜底且非 429：主路由失败后同路由重试 1 次（保持历史行为）。
    * - 配了兜底：主路由失败直接切兜底「渠道+模型」再试 1 次——不在主路由上
    *   重试，因为公益站/中转站的失败多为上游按模型维度失效，原地重试大概率还挂。
+   * - 主路由 429（上游限流）：有兜底立即切，无兜底直接抛出、不再同路由重试
+   *   （优先于前两条）。限流是分钟级配额，重试窗口内不会恢复，原地再打一次
+   *   只会多烧配额并把延迟翻倍（历史上 65s 冷启动、55s 返回 empty 的主因）。
    * 两条路径都失败时抛最后一次的错误，由调用方按各能力语义降级。
    *
    * 路由配了能力级超时（timeoutMs）时透传给每次调用（主/兜底均生效）：
-   * 预算属于能力而非某个模型，Provider 据此覆盖 client 默认超时并关闭 SDK 重试。
+   * 预算属于能力而非某个模型，Provider 据此覆盖 client 默认超时。
    *
    * @param ability 能力名（用于路由查表与日志）
    * @param invoke 实际调用：拿到 Provider、model 与调用选项发起请求
@@ -136,12 +160,26 @@ export class AiService {
       return await invoke(this.providerOf(route), route.model, opts);
     } catch (first) {
       const fb = route.fallback;
+      const status = errorStatus(first);
+      // 有码就带上，日志里能直接看清是限流、模型下架还是网关 5xx
+      const code = status === undefined ? '' : `（HTTP ${status}）`;
+
+      if (status === 429) {
+        this.logger.warn(
+          `${ability} 主路由限流(429)：${route.channel}/${route.model}` +
+            (fb ? '，跳过同路由重试' : '，无兜底，直接降级'),
+        );
+        if (!fb) throw first;
+      }
+
       if (!fb) {
-        this.logger.warn(`${ability} 失败，同路由重试一次：${String(first)}`);
+        this.logger.warn(
+          `${ability} 失败，同路由重试一次${code}：${String(first)}`,
+        );
         return await invoke(this.providerOf(route), route.model, opts);
       }
       this.logger.warn(
-        `${ability} 主路由失败（${route.channel}/${route.model}），` +
+        `${ability} 主路由失败：${route.channel}/${route.model}${code}，` +
           `切换兜底（${fb.channel}/${fb.model}）：${String(first)}`,
       );
       return await invoke(this.channels.get(fb.channel)!, fb.model, opts);

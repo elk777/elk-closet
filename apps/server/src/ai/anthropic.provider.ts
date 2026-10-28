@@ -66,16 +66,17 @@ export class AnthropicProvider implements AiProvider {
   /**
    * 能力级调用选项 → SDK 的 per-request 选项。
    *
-   * 配了紧超时就同时关掉 SDK 内建重试（默认 2 次）：重试会把能力的
-   * 超时预算翻三倍，且 AiService 已有主备兜底，原地重试无增量价值。
-   * 未配则返回 undefined，走 client 默认（AI_TIMEOUT_MS + 默认重试）。
+   * 恒关 SDK 内建重试（默认 2 次）：重试/兜底语义单点收敛在
+   * AiService.callWithFallback（有兜底切兜底，无兜底同路由重试 1 次）。
+   * 两层都重试时，一次 429 会被放大成 3 次请求——既烧掉配额，又把
+   * 30s 能力预算拖成 90s；限流本该立即换渠道而不是原地再撞。
+   * 超时则只在能力级配了才覆盖，否则沿用 client 默认（AI_TIMEOUT_MS）。
    */
-  private requestOptions(
-    opts?: AiCallOptions,
-  ): Anthropic.RequestOptions | undefined {
-    return opts?.timeoutMs
-      ? { timeout: opts.timeoutMs, maxRetries: 0 }
-      : undefined;
+  private requestOptions(opts?: AiCallOptions): Anthropic.RequestOptions {
+    return {
+      maxRetries: 0,
+      ...(opts?.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+    };
   }
 
   /**
