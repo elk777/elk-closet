@@ -464,7 +464,8 @@ export class GarmentService {
   /**
    * 记一次穿着（PRD 4.7 数据飞轮的起点）：穿着次数 +1，上次穿着日期置为当天。
    *
-   * 本版先提供手动「记一次穿着」入口；将来穿搭打卡确认单品后，由打卡链路复用此更新。
+   * 手动「记一次穿着」入口；穿搭打卡确认单品后也复用同一反哺逻辑
+   * （见 outfit.service 事务内的 wearCount+1 / lastWornAt 更新）。
    * 先校验归属再更新，防越权改他人衣物。
    * @param ownerId 归属用户 id
    * @param id 衣物 id
