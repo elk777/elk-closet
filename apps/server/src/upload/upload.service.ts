@@ -24,7 +24,7 @@ import {
 const ALLOWED_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'heic'] as const;
 type AllowedExt = (typeof ALLOWED_EXTS)[number];
 
-/** 直传图片体积上限（字节），与前端压缩策略对齐（PRD 5.6.1 限 2MB 级别） */
+/** 直传图片体积上限（字节），与前端压缩策略对齐：10MB 覆盖手机原图与长截图 */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 @Injectable()
@@ -35,9 +35,11 @@ export class UploadService {
    * 为当前用户签发一张图的直传凭证。
    *
    * 保存路径固定为 `<uploadDir>/<userId>/<resourceType>/<uuid>.<ext>`：
-   * - 按用户隔离目录：注销时整个 `<uploadDir>/<userId>/` 删净（PRD 可删除承诺）
+   * - 按用户隔离目录：便于将来按用户清理（当前没有注销/批量删除实现）
    * - 按资源类型隔离：衣物图/日记照/试穿图/全身照分开，便于将来分别设公开读/私有权限
    * - 随机文件名：防覆盖与枚举
+   * 注意：目前所有资源类型都经同一个公开 CDN 域名直出，
+   * 全身照（body）虽然路径独立，但拿到 URL 即可访问，私有读尚未实现。
    * 路径只承载「稳定不变」的信息（谁的、哪类资源），不放会变的业务属性（如衣物品类）。
    * @param userId 当前登录用户 id（从 JWT 来，前端不可伪造目录）
    * @param ext 文件扩展名，限白名单
@@ -62,7 +64,7 @@ export class UploadService {
       maxFileSize: MAX_FILE_SIZE,
     });
 
-    // 直传成功后经 CDN 域名访问（衣物图公开读）
+    // 直传成功后经 CDN 域名访问（当前所有资源类型均为公开读，含全身照）
     const imageUrl = `${upyun.domain}${saveKey}`;
     return { ...sign, imageUrl };
   }

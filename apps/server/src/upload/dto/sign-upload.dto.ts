@@ -17,7 +17,7 @@ export class SignUploadDto {
 
   /**
    * 资源类型，决定存进用户目录下哪个子目录；缺省为 garments（衣物图）。
-   * 本期只用 garments，其余为后续模块预留。
+   * garments / outfits / tryon / body 均已实际使用（全身照走 body）。
    */
   @IsOptional()
   @IsIn(UPLOAD_RESOURCE_TYPES, {
