@@ -327,10 +327,10 @@ AI_CHANNEL_GPT__API_KEY=sk-xxx
 AI_ROUTE_RECOGNIZE__CHANNEL=mimo
 AI_ROUTE_RECOGNIZE__MODEL=claude-sonnet-4-6
 AI_ROUTE_RECOGNIZE__VISION=true
-# 可选：主路由失败时自动切兜底再试一次（须成对配置）
+# 可选：主路由失败时自动切兜底再试一次（须成对配置）；主模型 429（限流）时立即切，不原地重试
 AI_ROUTE_RECOGNIZE__FALLBACK_CHANNEL=gpt
 AI_ROUTE_RECOGNIZE__FALLBACK_MODEL=gpt-4o
-# 可选：按能力覆盖全局超时，主/兜底两条腿都生效，并关闭 SDK 内建重试（预算不被重试翻倍）
+# 可选：按能力覆盖全局超时，主/兜底两条腿都生效（SDK 内建重试恒关，重试/兜底只由 AiService 负责）
 AI_ROUTE_RECOGNIZE__TIMEOUT_MS=30000
 ```
 
