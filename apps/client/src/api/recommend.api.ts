@@ -44,6 +44,12 @@ export interface MatchOutfitPayload {
   style?: string;
   /** 季节，限 SEASONS；不传后端按当前月份推断 */
   season?: string;
+  /**
+   * 强制重新生成，绕过当日缓存。
+   *
+   * 「换一批」用：同维度重复请求会命中缓存，不传此字段按钮等于没反应。
+   */
+  forceRefresh?: boolean;
 }
 
 /**

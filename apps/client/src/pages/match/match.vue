@@ -322,8 +322,9 @@ const pickedIds = computed(() => [...picked.value]);
 /**
  * 拉取智能搭配。任一维度变更即重新请求（AI 生成，带 loading）。
  * 失败提示由请求器统一处理，这里只兜底停 loading。
+ * @param forceRefresh 是否绕过服务端当日缓存（「换一批」用）
  */
-async function load() {
+async function load(forceRefresh = false) {
   loading.value = true;
   try {
     await userStore.ensureLogin();
@@ -331,6 +332,7 @@ async function load() {
       occasion: occasion.value || undefined,
       style: style.value || undefined,
       season: season.value,
+      forceRefresh: forceRefresh || undefined,
     });
   } catch {
     // 提示已由 request / ensureLogin 统一处理
@@ -339,10 +341,10 @@ async function load() {
   }
 }
 
-/** 换一批：同维度重新生成 */
+/** 换一批：同维度重新生成（显式跳过缓存，否则会拿到同一套） */
 function reload() {
   if (loading.value) return;
-  load();
+  load(true);
 }
 
 function pickOccasion(o: string) {
