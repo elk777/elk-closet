@@ -5,7 +5,8 @@
  * - devLogin：开发/联调用，无需微信环境，固定或指定测试用户直接拿 token
  * - wxMiniLogin：微信小程序静默登录（PRD 4.9），当前留桩，待前端联调补 code 换 openid
  *
- * 两者都收敛到 UserService.findOrCreate + issueToken，保证登录路径一致。
+ * devLogin 走 UserService.findOrCreate + issueToken；wxMiniLogin 目前是桩（见下），
+ * 接入 jscode2session 后同样落到 findOrCreate，保证两条登录路径一致。
  */
 
 import { Injectable, NotImplementedException } from '@nestjs/common';
