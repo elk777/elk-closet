@@ -115,7 +115,7 @@ export const UPLOAD_RESOURCE_TYPES = [
 ] as const;
 export type UploadResourceType = (typeof UPLOAD_RESOURCE_TYPES)[number];
 
-/** 资源类型缺省值：本期只用衣物图，签名接口不传 type 时按此归目录 */
+/** 资源类型缺省值：签名接口不传 type 时按此归目录 */
 export const DEFAULT_UPLOAD_RESOURCE_TYPE: UploadResourceType = 'garments';
 
 /**
