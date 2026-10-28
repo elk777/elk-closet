@@ -93,7 +93,6 @@ export class OutfitService {
           source: dto.source ?? 'manual',
           weather: (weather as unknown as object) ?? undefined,
           note: dto.note ?? null,
-          // ↑ note 列已在 schema 补齐；此处随打卡一同落库
           items: {
             create: validIds.map((garmentId) => ({ garmentId })),
           },
