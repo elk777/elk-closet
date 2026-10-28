@@ -60,7 +60,7 @@ function request<T>(opts: FullOptions): Promise<T> {
           resolve(body.data);
           return;
         }
-        // 401 清登录态
+        // 401 只清 token，不跳登录页：下次请求/进入页面时由 ensureLogin 静默续登
         if (res.statusCode === 401) {
           clearToken();
         }
