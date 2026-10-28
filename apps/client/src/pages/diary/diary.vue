@@ -116,9 +116,9 @@ onShow(() => {
   load();
 });
 
-/** 跳打卡详情 */
+/** 跳打卡详情（路径须与 pages.json 注册的 pages/diary/detail 一致） */
 function goDetail(id: string) {
-  uni.navigateTo({ url: `/pages/diary/outfit-detail?id=${id}` });
+  uni.navigateTo({ url: `/pages/diary/detail?id=${id}` });
 }
 </script>
 
