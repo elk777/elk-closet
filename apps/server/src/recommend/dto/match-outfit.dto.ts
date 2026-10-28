@@ -9,7 +9,7 @@
  * 白名单校验防止前端传脏值污染 prompt。
  */
 
-import { IsIn, IsOptional } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional } from 'class-validator';
 import {
   OCCASION_OPTIONS,
   SEASONS,
@@ -34,4 +34,15 @@ export class MatchOutfitDto {
   @IsOptional()
   @IsIn(SEASONS, { message: 'season 非法' })
   season?: Season;
+
+  /**
+   * 强制重新生成，绕过当日缓存。
+   *
+   * 「换一批」用：用户要的就是换个结果，命中缓存等于点了没反应。
+   * 注意全局 ValidationPipe 开了 whitelist，前端多传而 DTO 未声明的字段会被静默剥离，
+   * 所以此字段必须在这里显式声明。
+   */
+  @IsOptional()
+  @IsBoolean({ message: 'forceRefresh 必须是布尔值' })
+  forceRefresh?: boolean;
 }

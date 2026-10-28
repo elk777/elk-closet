@@ -1,5 +1,5 @@
 /**
- * RecommendService：今日推荐的业务编排（PRD 4.5）。
+ * RecommendService：推荐业务的编排（今日推荐 + 智能搭配，PRD 4.5）。
  *
  * 一条链路串起三方能力：
  *   衣橱数据（Prisma）→ 天气（WeatherService）→ 造型师（AiService）
@@ -10,6 +10,8 @@
  * - AI 只拿衣橱「摘要」（不含图，控 token）；返回后 pruneRecommend 剔除编造 id，
  *   再把合法 id 回填成完整 Garment（前端要图与名称）
  * - 只喂在库、未闲置的衣物：闲置件不参与推荐（呼应断舍离语义）
+ * - 两个接口共用 recommendations 表做当日缓存：今日推荐按时段、智能搭配按筛选维度
+ *   （见 matchCacheKey），失效逻辑只维护一份
  */
 
 import { Injectable, Logger } from '@nestjs/common';
@@ -21,11 +23,12 @@ import {
   type Formality,
   type Garment,
   type MatchedOutfits,
+  type OccasionOption,
   type RecommendInput,
   type RecommendedOutfitView,
   type RecommendWeather,
   type Season,
-  type Timeslot,
+  type StyleOption,
   type TodayRecommendation,
   type WardrobeBriefItem,
 } from '@zhiyi/shared';
@@ -142,6 +145,8 @@ export class RecommendService {
    * - 不绑天气：搭配由用户选的维度决定，季节维度更权威
    * - 季节硬过滤：只把当季衣物喂给 AI，更准且省 token；当季不足则返回 thin
    * - occasion / style 作 prompt 软约束
+   * - 同一天、同一组维度的结果走缓存（见 matchCacheKey），
+   *   来回切 chip 不再重复等 AI
    *
    * @param ownerId 当前登录用户 id
    * @param dto 场合 / 风格 / 季节维度（均可选，season 缺省按当前月份推断）
@@ -181,6 +186,27 @@ export class RecommendService {
       return { ...base, status: 'thin', outfits: [] };
     }
 
+    // 缓存粒度为「同一用户、同一天、同一组筛选维度」：
+    // 用户来回切 chip、退出重进页面都会重复请求同一组条件，
+    // 不缓存等于每次重付 30s+ 的 AI 调用
+    const date = this.cacheDate(new Date());
+    const cacheKey = this.matchCacheKey(season, dto.occasion, dto.style);
+
+    // 天气传 null：智能搭配不绑天气，isCacheValid 会跳过天气判定。
+    // 衣橱变化交给既有失效逻辑——删/归档由 dropRecommendationUsing 删行，
+    // 新增当季衣物只标 stale，旧搭配依然成立，照常展示
+    // 「换一批」显式绕过缓存：用户要的就是换个结果，命中缓存等于没反应
+    if (!dto.forceRefresh) {
+      const cache = await this.findCache(ownerId, date, cacheKey);
+      if (cache && this.isCacheValid(cache, null, garments)) {
+        return {
+          ...base,
+          status: 'ok',
+          outfits: cache.outfits as unknown as RecommendedOutfitView[],
+        };
+      }
+    }
+
     const input: RecommendInput = {
       occasion: dto.occasion,
       style: dto.style,
@@ -190,6 +216,18 @@ export class RecommendService {
 
     const outfits = await this.generate(input, seasonal);
 
+    // 只缓存有结果的生成：empty 多半是模型没搭出来，缓存它等于把失败固化一整天
+    if (outfits.length > 0) {
+      await this.writeCache({
+        ownerId,
+        date,
+        timeslot: cacheKey,
+        weather: null,
+        outfits,
+        seasonalCount: seasonal.length,
+      });
+    }
+
     return {
       ...base,
       status: outfits.length > 0 ? 'ok' : 'empty',
@@ -197,7 +235,31 @@ export class RecommendService {
     };
   }
 
-  /* ──────────────── 今日推荐缓存 ──────────────── */
+  /* ──────────────── 推荐缓存（今日推荐 / 智能搭配共用） ──────────────── */
+
+  /**
+   * 智能搭配的缓存键：把筛选维度编码进 recommendations.timeslot。
+   *
+   * 复用 timeslot 而不是新建表或加列：`timeslot` 在库里本就是 String，
+   * 复用后「删衣物 → 删行」「新增衣物 → 标 stale」两套既有失效逻辑
+   * 自动覆盖智能搭配，不必再维护第二份。
+   *
+   * 键形如 `match|春|通勤|极简`，未指定的维度用 `-` 占位，
+   * 保证 `match|春|-|-` 与 `match|春|通勤|-` 不会互相命中。
+   * 今日推荐写的是 `morning|noon|evening`，两种键形态天然不冲突。
+   *
+   * @param season 季节，缓存键的一维
+   * @param occasion 场合，未选为 undefined
+   * @param style 风格，未选为 undefined
+   * @returns 缓存键
+   */
+  private matchCacheKey(
+    season: Season,
+    occasion?: OccasionOption,
+    style?: StyleOption,
+  ): string {
+    return `match|${season}|${occasion ?? '-'}|${style ?? '-'}`;
+  }
 
   /**
    * 取缓存键用的日期（服务器本地时区零点）。
@@ -212,18 +274,19 @@ export class RecommendService {
   }
 
   /**
-   * 读当前用户在该日期该时段的缓存。
+   * 读当前用户在该日期该键下的推荐缓存（今日推荐与智能搭配共用）。
    *
    * 缓存故障不该阻断推荐：查询异常一律当「没缓存」，退回正常生成路径。
    * @param ownerId 用户 id
    * @param date 缓存日期（本地零点）
-   * @param timeslot 时段
+   * @param timeslot 缓存键：今日推荐为时段（`morning|noon|evening`），
+   *   智能搭配为筛选维度编码（见 matchCacheKey）
    * @returns 缓存记录，无或异常时 null
    */
   private async findCache(
     ownerId: string,
     date: Date,
-    timeslot: Timeslot,
+    timeslot: string,
   ): Promise<Recommendation | null> {
     try {
       return await this.prisma.recommendation.findUnique({
@@ -279,12 +342,13 @@ export class RecommendService {
    *
    * 与读一致：写失败只告警不抛错——推荐已经生成好了，
    * 因为存不下就把结果丢给用户报错是本末倒置。
-   * @param params 缓存键与内容
+   * @param params 缓存键与内容；timeslot 两种键形态同 findCache，
+   *   智能搭配的 weather 恒为 null
    */
   private async writeCache(params: {
     ownerId: string;
     date: Date;
-    timeslot: Timeslot;
+    timeslot: string;
     weather: RecommendWeather | null;
     outfits: RecommendedOutfitView[];
     seasonalCount: number;
