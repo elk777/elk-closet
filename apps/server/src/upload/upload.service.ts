@@ -106,6 +106,8 @@ export class UploadService {
         'Content-Type': `image/${safeExt === 'jpg' ? 'jpeg' : safeExt}`,
       },
       body: new Uint8Array(buffer),
+      // 又拍云半开连接会一直挂着，占满 Node 连接池；10MB 图正常几秒内传完
+      signal: AbortSignal.timeout(30_000),
     });
     if (!resp.ok) {
       const detail = await resp.text().catch(() => '');
