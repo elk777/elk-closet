@@ -12,7 +12,10 @@ import { AiService, TryOnFailedError } from '../ai/ai.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 
-/** 试穿单品最少 / 最多件数：太少无意义，太多超模型 16 图上限且易崩 */
+/**
+ * 单套试穿单品上限：太多会超模型 16 图上限且易崩。
+ * 下限由 TryOnOutfitDto 的 @ArrayMinSize(1) 保证，此处不再校验。
+ */
 const MAX_TRYON_ITEMS = 8;
 
 @Injectable()

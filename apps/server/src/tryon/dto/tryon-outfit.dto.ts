@@ -15,7 +15,7 @@ import {
 
 export class TryOnOutfitDto {
   /**
-   * 本套单品 id。至少 1 件；上限 8 件——gpt-image-2 单次 edit 最多 16 图，
+   * 本套单品 id。至少 1 件；上限 8 件——图像模型单次 edit 最多 16 图，
    * 留出全身照的位子并控制成本，一套穿搭 8 件足够。
    */
   @IsArray()
