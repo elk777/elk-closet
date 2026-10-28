@@ -74,7 +74,7 @@ const AI_ABILITIES = ['RECOGNIZE', 'RECOMMEND', 'GUESS', 'TRYON'] as const;
  * 渠道名由用户自定（AI_CHANNEL_<名字>__字段），是动态前缀，无法用固定 key 的
  * zod schema 覆盖，故单独在此对原始 env 做交叉校验：
  * 1. 至少 1 个渠道，每个渠道协议合法、密钥非空（忘配密钥启动即失败）；
- * 2. 三条能力路由齐全，各含 channel/model；
+ * 2. 四条能力路由齐全，各含 channel/model；
  * 3. 路由引用的 channel 必须存在于渠道表（核心防呆）。
  *
  * @param raw process.env 原始对象

@@ -32,9 +32,9 @@ async function bootstrap() {
     }),
   );
 
-  // 统一响应信封：成功包成 { code:0, message:'ok', data }
+  // 统一响应信封：成功包成 { code:0, data, timestamp }（无 message 字段）
   app.useGlobalInterceptors(new ResponseInterceptor());
-  // 统一异常信封：失败包成 { code, message, data:null }，message 可直接展示给用户
+  // 统一异常信封：失败包成 { code, message, path, timestamp }，message 可直接展示给用户
   app.useGlobalFilters(new HttpExceptionFilter());
 
   await app.listen(port);
