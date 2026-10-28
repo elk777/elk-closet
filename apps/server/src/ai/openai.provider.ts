@@ -48,8 +48,12 @@ import {
 } from './guess-outfit.prompt';
 import { buildTryOnPrompt } from './tryon.prompt';
 
-/** 喂给 vision 模型的图片长边上限（像素）：属性判定/截图提取不需要更高分辨率 */
-const VISION_MAX_EDGE = 1024;
+/**
+ * 喂给 vision 模型的图片长边上限（像素）：属性判定/截图提取不需要更高分辨率。
+ * 1024 → 768 是 2026-10-28 提速实验的折中：图片 token 降约 40%，小配饰仍可辨认；
+ * 再降到 640 会明显损失耳环/腰链这类细节，未采用。
+ */
+const VISION_MAX_EDGE = 768;
 /** 喂图统一转 JPEG 的压缩质量 */
 const VISION_JPEG_QUALITY = 80;
 
@@ -116,8 +120,9 @@ export class OpenAiProvider implements AiProvider {
     const completion = await this.client.chat.completions.create(
       {
         model,
-        // 与识别对齐：推理模型思考链与正文共用预算
-        max_tokens: 4000,
+        // 与识别对齐：推理模型思考链与正文共用预算。
+        // 实测识别/提取的 completion 仅 200 左右，2000 足够且能拦住失控的长思考
+        max_tokens: 2000,
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -230,8 +235,9 @@ export class OpenAiProvider implements AiProvider {
       {
         model,
         // 推理型模型（国产系普遍）思考链与正文共用预算，1024 会被思考吃光
-        // 致 finish_reason=length、content 为空。与 recommend 对齐给到 4000。
-        max_tokens: 4000,
+        // 致 finish_reason=length、content 为空。本次实测 completion 317~335
+        // （含思考），给到 2000 留足余量且能拦住失控的长思考
+        max_tokens: 2000,
         // 强制 JSON 输出，与 prompt 里的「只返回 JSON」双保险
         response_format: { type: 'json_object' },
         messages: [
@@ -310,8 +316,8 @@ export class OpenAiProvider implements AiProvider {
    * 为什么先缩图（2026-08-11 真机超时复盘）：手机原图/信息密集长截图动辄
    * 2MB+，推理型 vision 模型处理原始大图单次要 20~40s（同图缩到 1024 后
    * 实测 5.7s），会烧穿识别的 30s 能力预算导致主备双双超时。属性判定不
-   * 需要高分辨率，统一缩到长边 ≤1024 的 JPEG：EXIF 自动摆正（手机竖拍
-   * 不再横着喂）、透明底铺白（抠图 PNG 无 alpha 可用）。
+   * 需要高分辨率，统一缩到长边 ≤{@link VISION_MAX_EDGE} 的 JPEG：EXIF 自动摆正
+   * （手机竖拍不再横着喂）、透明底铺白（抠图 PNG 无 alpha 可用）。
    * sharp 读不了的罕见格式回退原图——宁可慢也不断链路。
    * 图片 URL 是又拍云公开 CDN，直连抓取（不走渠道代理）。
    * @param url 公开可访问的图片 URL
