@@ -53,3 +53,9 @@ coverage/
 apps/server/scripts/model-probe/
 k3-quality-test.md
 
+# 一次性数据准备脚本（本地私有工具）
+# 用途：批量生成演示衣物（生图 → 又拍云 → 入库）。凭证从 .env.local 读，不硬编码；
+# 但脚本里含第三方渠道端点与模型名，只留本地，不入库。
+apps/server/scripts/gen-image.mjs
+apps/server/scripts/seed-garments.mjs
+
