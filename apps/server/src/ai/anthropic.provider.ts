@@ -215,7 +215,7 @@ export class AnthropicProvider implements AiProvider {
    * 试穿：Anthropic 协议无图像编辑能力，显式抛错。
    *
    * 保留此实现只为满足 AiProvider 接口完整——试穿必须路由到支持图像编辑的
-   * 渠道（如 OpenAI 协议下的 gpt-image-2）。误配到本渠道时启动虽能通过，
+   * 渠道（如 OpenAI 协议下的图像模型）。误配到本渠道时启动虽能通过，
    * 调用即抛错，由上层降级为「试穿生成失败」，不静默出错图。
    */
   tryOn(): Promise<string> {
@@ -254,7 +254,6 @@ export class AnthropicProvider implements AiProvider {
       this.requestOptions(opts),
     );
 
-    // 取第一个文本块作为返回
     return this.extractText(message);
   }
 }

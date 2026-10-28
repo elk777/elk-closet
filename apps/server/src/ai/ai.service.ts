@@ -209,7 +209,8 @@ export class AiService {
    * 能力只会复制一遍相同的 env 配置；将来需要独立选型时再拆（配置层已支持）。
    * @param input 同一件商品的 1~3 张购物截图 + 品类候选集
    * @returns 已过 Zod 校验的提取结果（字段可为 null，防编造契约）
-   * @throws ScreenshotExtractFailedError 无 vision 能力、截图不可达，或主备均失败
+   * @throws ScreenshotExtractFailedError 无 vision 能力，或主备均失败
+   *   （图不可达不再预检：模型抓不到图会返回全 null，由 isIrrelevantScreenshot 兜底）
    */
   async extractFromScreenshot(
     input: ScreenshotExtractInput,

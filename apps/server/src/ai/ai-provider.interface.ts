@@ -47,7 +47,8 @@ export interface AiClientOptions {
  *
  * 与 AiClientOptions 的分工：client 级 timeoutMs 是渠道默认值（AI_TIMEOUT_MS，
  * 为最慢的图像生成而设），本选项按能力覆盖单次调用——如识别配 30s，
- * 主模型卡死时能赶在前端 60s 超时前切兜底返回，不被全局 180s 拖死。
+ * 主模型卡死时能赶在客户端超时前切兜底返回，不被全局超时拖死
+ * （客户端普通请求 60s、识别/截图 180s，均有能力级超时兜住）。
  *
  * 实现约定：配了 timeoutMs 的调用必须同时关闭 SDK 内建重试（默认 2 次，
  * 会把超时预算翻三倍；主备兜底已由 AiService 承担，原地重试无增量价值）。
@@ -190,7 +191,7 @@ export interface AiProvider {
    * - 不支持图像编辑的协议（如 anthropic）实现里显式抛错
    *
    * @param input 全身照 + 本套单品图（含简述）+ 可选场合/风格
-   * @param model 本次调用使用的模型名（由能力路由传入，如 gpt-image-2）
+   * @param model 本次调用使用的模型名（由能力路由传入，如 gpt-image-* 系列）
    * @param opts 单次调用选项（能力级超时等），缺省用渠道 client 默认值
    * @returns 合成上身图的 base64（不含 data: 前缀）
    */
