@@ -57,7 +57,7 @@ function thumbOf(item: BatchItem): string {
 /** 卡片摘要：识别到什么就显示什么，没识别出来给出「先存后补」的语义 */
 function summaryOf(item: BatchItem): string {
   if (item.status === 'uploading') return '上传中…';
-  if (item.status === 'processing') return 'AI 识别中…';
+  if (item.status === 'processing') return '正在帮你看看…';
   if (!item.imageUrl) return '图片上传失败';
   if (!item.draft) return '没认出来，可先入橱稍后补';
   const { name, category, mainColor } = item.draft;

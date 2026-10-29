@@ -71,20 +71,20 @@ const recognitionNotice = ref<'' | 'failed' | 'low' | 'skipped'>('');
  * 确认页提示条文案。
  *
  * 四种情况语义不同，别合并：
- * - skipped：用户主动跳过 AI，是我们给的出口，不该说成「AI 没认出来」
+ * - skipped：用户主动跳过，是我们给的出口，不该说成「没能确认」
  * - failed：AI 真的没读出来（截图分支措辞不同，因为补的是截图不是实物图）
  * - low：识别出来了但置信度低，提示核对
  */
 const noticeText = computed(() => {
   if (recognitionNotice.value === 'skipped') {
-    return '已跳过 AI，属性可稍后补充';
+    return '已先存下图片，属性稍后补充';
   }
   if (recognitionNotice.value === 'failed') {
     return fromScreenshot.value
-      ? 'AI 没读出来，可以先存截图稍后补'
-      : 'AI 没认出这件衣物，可以先保存图片，稍后再补充信息';
+      ? '没能读出来，可以先存下截图稍后补'
+      : '没能确认这件衣物，可以先保存图片，稍后再补充';
   }
-  return 'AI 对识别结果不太确定，建议核对后再保存';
+  return '这几项拿不太准，建议核对后再保存';
 });
 /**
  * 入口页提示条：截图被判为非购物图时的说明。
@@ -369,7 +369,7 @@ function close() {
       />
       <!-- 跳过只对识别开放：上传/抠图/提取没有「先存后补」的等价路径 -->
       <view v-if="canSkip && recognizing" class="skip" @click="onSkip">
-        <text class="skip__t">跳过 AI，先存图后补</text>
+        <text class="skip__t">先跳过，稍后再补</text>
       </view>
     </view>
 

@@ -172,7 +172,7 @@
     <!-- 拉取失败（网络 / AI 网关抖动）：给出可重试出口，不让页面空着 -->
     <view v-else-if="loadError" class="empty">
       <text class="empty-t">没能生成今日推荐</text>
-      <text class="empty-s">网络或 AI 服务不太稳，稍后再试一次</text>
+      <text class="empty-s">网络不太稳，稍后再试一次</text>
       <view class="empty-cta" @click="reload">
         <text>再试一次</text>
       </view>

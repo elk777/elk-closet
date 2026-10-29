@@ -18,9 +18,9 @@ import { recognizeGarment } from '../api/garment.api';
 /** 等待超过此时长（毫秒）切换第二阶段文案 */
 const SLOW_HINT_DELAY_MS = 12000;
 /**
- * 等待超过此时长（毫秒）才允许「跳过 AI」。
+ * 等待超过此时长（毫秒）才允许显示「先跳过，稍后再补」。
  *
- * 比 SLOW_HINT_DELAY_MS 晚 3 秒：先让用户看到「正在换个思路」的反馈，
+ * 比 SLOW_HINT_DELAY_MS 晚 3 秒：先让用户看到「换个角度看」的缓和反馈，
  * 再给出口。用户过早放弃会白等一次（后台请求仍会跑完）。
  * 两个常量语义不同，不要合并。
  */
@@ -41,10 +41,10 @@ export type RecognizeOutcome =
 export function useRecognition() {
   const recognizing = ref(false);
   const lowConfidence = ref(false);
-  const recognizingHint = ref('AI 识别中…');
-  /** 等待够久、可以显示「跳过 AI」按钮 */
+  const recognizingHint = ref('正在帮你看看这件…');
+  /** 等待够久、可以显示「先跳过」按钮 */
   const canSkip = ref(false);
-  /** 本次是用户主动跳过的（用于区别于「AI 没认出来」的文案） */
+  /** 本次是用户主动跳过的（用于区别于「没能确认」的文案） */
   const skipped = ref(false);
   let slowHintTimer: ReturnType<typeof setTimeout> | null = null;
   let skipTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,12 +80,12 @@ export function useRecognition() {
     clearTimers();
     recognizing.value = true;
     lowConfidence.value = false;
-    recognizingHint.value = 'AI 识别中…';
+    recognizingHint.value = '正在帮你看看这件…';
     canSkip.value = false;
     skipped.value = false;
     skipRequested = false;
     slowHintTimer = setTimeout(() => {
-      recognizingHint.value = '有点慢，AI 正在换个思路…';
+      recognizingHint.value = '有点慢，正在换个角度看…';
     }, SLOW_HINT_DELAY_MS);
     skipTimer = setTimeout(() => {
       canSkip.value = true;

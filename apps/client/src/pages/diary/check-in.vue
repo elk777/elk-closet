@@ -24,7 +24,7 @@
       <view class="section">
         <view class="section__head">
           <text class="section__title">今天穿了这些</text>
-          <text v-if="guessing" class="section__hint">AI 识别中…</text>
+          <text v-if="guessing" class="section__hint">正在帮你看看穿了什么…</text>
           <text v-else class="section__hint">{{ selectedIds.length }} 件已选</text>
         </view>
 

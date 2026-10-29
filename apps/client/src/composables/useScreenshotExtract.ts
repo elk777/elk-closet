@@ -36,7 +36,7 @@ export type ExtractOutcome =
 export function useScreenshotExtract() {
   const extracting = ref(false);
   const lowConfidence = ref(false);
-  const extractingHint = ref('AI 正在读取截图…');
+  const extractingHint = ref('正在读这张截图…');
   let slowHintTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -47,9 +47,9 @@ export function useScreenshotExtract() {
   async function extract(imageUrls: string[]): Promise<ExtractOutcome> {
     extracting.value = true;
     lowConfidence.value = false;
-    extractingHint.value = 'AI 正在读取截图…';
+    extractingHint.value = '正在读这张截图…';
     slowHintTimer = setTimeout(() => {
-      extractingHint.value = '有点慢，AI 正在换个思路…';
+      extractingHint.value = '有点慢，正在换个方式读…';
     }, SLOW_HINT_DELAY_MS);
     try {
       const res = await extractScreenshot(imageUrls);
