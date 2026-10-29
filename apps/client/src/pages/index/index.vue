@@ -87,10 +87,10 @@
       </text>
     </view>
 
-    <!-- 加载中 -->
-    <view v-if="loading" class="state">
-      <AppLoading text="正在为你搭配…" />
-    </view>
+    <!-- 加载中：用骨架屏占住内容位置，避免加载完成时整块区域突然撑高 -->
+    <template v-if="loading">
+      <SkeletonOutfit :count="2" />
+    </template>
 
     <!-- 件数不足：解锁引导（PRD 4.9 冷启动钩子） -->
     <view v-else-if="rec?.status === 'locked'" class="unlock">
@@ -196,7 +196,7 @@ import {
   DEFAULT_CLOSET_NAME,
   type TodayRecommendation,
 } from '@zhiyi/shared';
-import AppLoading from '../../components/base/AppLoading.vue';
+import SkeletonOutfit from '../../components/base/SkeletonOutfit.vue';
 import AppTag from '../../components/base/AppTag.vue';
 import AppIcon from '../../components/base/AppIcon.vue';
 import AddGarmentSheet from '../../components/garment/AddGarmentSheet.vue';
@@ -287,7 +287,13 @@ async function load() {
   }
 }
 
-/** 换一套 / 再试一次：重新生成 */
+/**
+ * 换一套 / 再试一次：重新生成。
+ *
+ * 与智能搭配页不同，这里刻意**清屏**走 loading：首页刷新期间 cacheStale 提示条、
+ * 「没能换新」提示条都挂在结果区内部，保留旧结果会让这些提示一起被弱化、
+ * 点不进去，状态语义反而更乱。智能搭配页才需要「保留对照」。
+ */
 async function reload() {
   if (loading.value) return;
   cacheStale.value = false;
@@ -517,9 +523,6 @@ function goCheckIn(items: { id: string }[]) {
 .sec-title__link {
   font-size: 13px;
   color: $zy-ink-2;
-}
-.state {
-  padding-top: 80px;
 }
 .unlock {
   margin-top: 40px;

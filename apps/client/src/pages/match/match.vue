@@ -74,10 +74,15 @@
       <text class="diy__s">手动选几件，试穿看或存为打卡</text>
     </view>
 
-    <!-- 加载中 -->
-    <view v-if="loading" class="state">
-      <AppLoading text="正在为你搭配…" />
+    <!-- 刷新中：细进度条，配合下方旧结果弱化一起表达「正在取新结果」 -->
+    <view v-if="refreshing" class="progress">
+      <view class="progress__bar" />
     </view>
+
+    <!-- 首次加载：骨架屏占住内容位置 -->
+    <template v-if="loading">
+      <SkeletonOutfit :count="2" />
+    </template>
 
     <!-- 整个衣橱件数不足：解锁引导 -->
     <view v-else-if="res?.status === 'locked'" class="hint">
@@ -100,7 +105,8 @@
     </view>
 
     <!-- 有搭配：套装卡列表 -->
-    <view v-else-if="res?.status === 'ok'" class="outfits">
+    <!-- refreshing：切维度时保留旧结果并弱化，比清屏更能让用户保持对照 -->
+    <view v-else-if="res?.status === 'ok'" class="outfits" :class="{ 'is-refreshing': refreshing }">
       <view v-for="(o, i) in res.outfits" :key="i" class="outfit">
         <view class="outfit__head">
           <view class="outfit__tags">
@@ -141,8 +147,8 @@
       </view>
 
       <!-- 换一批 -->
-      <view class="refresh" :class="{ 'refresh--busy': loading }" @click="reload">
-        <text>{{ loading ? '搭配中…' : '换一批' }}</text>
+      <view class="refresh" :class="{ 'refresh--busy': loading || refreshing }" @click="reload">
+        <text>{{ loading || refreshing ? '搭配中…' : '换一批' }}</text>
       </view>
     </view>
 
@@ -268,6 +274,7 @@ import {
   type Season,
 } from '@zhiyi/shared';
 import AppLoading from '../../components/base/AppLoading.vue';
+import SkeletonOutfit from '../../components/base/SkeletonOutfit.vue';
 import AppSheet from '../../components/base/AppSheet.vue';
 import AppTag from '../../components/base/AppTag.vue';
 import { getMatchedOutfits } from '../../api/recommend.api';
@@ -283,6 +290,13 @@ const seasonOptions = SEASONS;
 
 const res = ref<MatchedOutfits | null>(null);
 const loading = ref(true);
+/**
+ * 已有旧结果、正在取新结果。
+ *
+ * 与 loading 分开：loading 表示「什么都没有、出骨架屏」，refreshing 表示
+ * 「旧结果还在、弱化着等新的」。两者互斥，合成一个布尔会让「该不该清屏」失去依据。
+ */
+const refreshing = ref(false);
 const userStore = useUserStore();
 
 // 维度状态：场合/风格默认不限；季节默认跟随当前月份
@@ -320,47 +334,70 @@ const picked = ref<Set<string>>(new Set());
 const pickedIds = computed(() => [...picked.value]);
 
 /**
- * 拉取智能搭配。任一维度变更即重新请求（AI 生成，带 loading）。
- * 失败提示由请求器统一处理，这里只兜底停 loading。
+ * 请求序号：切维度时递增，回来时不是最新的就丢弃。
+ *
+ * 必须有：切 chip 会立刻发新请求，而旧请求可能后返回（AI 耗时 9~35s，先后无保证）。
+ * 没有这道闸门时，先点的维度会把后点的结果覆盖掉——用户看到的是上一个维度的搭配。
+ */
+let reqId = 0;
+
+/**
+ * 拉取智能搭配。任一维度变更即重新请求（AI 生成）。
+ *
+ * 区分两态：已有结果时走 refreshing（保留旧结果并弱化），
+ * 没有结果时才走 loading（骨架屏）。切 chip 若直接清屏，用户会失去对照。
+ * 失败提示由请求器统一处理，这里只兜底停状态。
  * @param forceRefresh 是否绕过服务端当日缓存（「换一批」用）
  */
 async function load(forceRefresh = false) {
-  loading.value = true;
+  const my = ++reqId;
+  const hasContent = res.value?.status === 'ok';
+  if (hasContent) {
+    refreshing.value = true;
+  } else {
+    loading.value = true;
+  }
   try {
     await userStore.ensureLogin();
-    res.value = await getMatchedOutfits({
+    const data = await getMatchedOutfits({
       occasion: occasion.value || undefined,
       style: style.value || undefined,
       season: season.value,
       forceRefresh: forceRefresh || undefined,
     });
+    if (my !== reqId) return; // 过期响应：期间用户已切到别的维度
+    res.value = data;
   } catch {
     // 提示已由 request / ensureLogin 统一处理
   } finally {
-    loading.value = false;
+    // 只由最新那次请求负责收尾，否则旧请求会提前把新请求的 loading 关掉
+    if (my === reqId) {
+      loading.value = false;
+      refreshing.value = false;
+    }
   }
 }
 
 /** 换一批：同维度重新生成（显式跳过缓存，否则会拿到同一套） */
 function reload() {
-  if (loading.value) return;
+  if (loading.value || refreshing.value) return;
   load(true);
 }
 
 function pickOccasion(o: string) {
-  if (loading.value || occasion.value === o) return;
+  if (loading.value || refreshing.value || occasion.value === o) return;
   occasion.value = o;
   load();
 }
 
 function pickStyle(s: string) {
-  if (loading.value || style.value === s) return;
+  if (loading.value || refreshing.value || style.value === s) return;
   style.value = s;
   load();
 }
 
 function pickSeason(s: Season) {
-  if (loading.value || season.value === s) return;
+  if (loading.value || refreshing.value || season.value === s) return;
   season.value = s;
   load();
 }
@@ -376,6 +413,9 @@ function goAddGarment() {
 
 /** 跳衣物详情 */
 function goDetail(id: string) {
+  // 刷新中旧结果是「待替换」的临时内容，不该让用户点进去操作。
+  // 样式上已有 pointer-events: none，但那在部分小程序基础库/组件上不稳，故入口再兜一层。
+  if (refreshing.value) return;
   uni.navigateTo({ url: `/pages/garment/detail?id=${id}` });
 }
 
@@ -385,6 +425,7 @@ function goDetail(id: string) {
  * @param items 该套搭配的完整单品
  */
 function onTryOn(items: { id: string }[]) {
+  if (refreshing.value) return; // 同 goDetail：刷新中不响应旧结果上的操作
   tryOnItemIds.value = items.map((i) => i.id);
   tryOnVisible.value = true;
   runTryOn();
@@ -458,6 +499,7 @@ function saveTryOnAsCheckIn() {
  * @param items 该套搭配的完整单品
  */
 function goCheckIn(items: { id: string }[]) {
+  if (refreshing.value) return; // 同 goDetail：刷新中不响应旧结果上的操作
   const itemIds = items.map((i) => i.id).join(',');
   uni.navigateTo({
     url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
@@ -559,9 +601,6 @@ function pickedCheckIn() {
   color: #fff;
   border-color: $zy-accent;
 }
-.state {
-  padding-top: 120px;
-}
 .hint {
   margin-top: 60px;
   display: flex;
@@ -593,6 +632,32 @@ function pickedCheckIn() {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+/* 刷新中：旧结果弱化并禁点。
+   不用 filter: blur —— 小程序下支持不稳且拖慢滚动；低透明度已足够表达「这不是最终结果」，
+   pointer-events: none 顺带避免用户按旧结果去打卡。 */
+.outfits.is-refreshing {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+/* 顶部细进度条：不确定进度（AI 耗时不可预知，做假百分比反而误导） */
+.progress {
+  height: 2px;
+  margin-top: 12px;
+  overflow: hidden;
+  background: $zy-line;
+  border-radius: 1px;
+}
+.progress__bar {
+  width: 40%;
+  height: 100%;
+  background: $zy-accent;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
 .outfit {
   background: $zy-surface;
