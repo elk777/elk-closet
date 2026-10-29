@@ -74,6 +74,10 @@ export function useRecognition() {
    * @returns 三态结果，调用方按 kind 分流（见 RecognizeOutcome）
    */
   async function recognize(imageUrl: string): Promise<RecognizeOutcome> {
+    // 重入保护：本 composable 的状态是单例，两轮并行会互相覆盖（上一轮的 finally 会把
+    // recognizing 置 false，让下一轮提前露出空表单），且旧定时器句柄被新调用覆盖后
+    // 永远清不掉。调用方虽有 busy 闸门，这里再兜一层，防止别处复用。
+    clearTimers();
     recognizing.value = true;
     lowConfidence.value = false;
     recognizingHint.value = 'AI 识别中…';

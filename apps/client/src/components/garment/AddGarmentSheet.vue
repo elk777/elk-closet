@@ -123,8 +123,27 @@ watch(
   },
 );
 
+/**
+ * 本轮录入是否已在进行中（选图窗口打开 / 上传 / 识别中）。
+ *
+ * 防重入：`imageUrl` 要等上传成功才赋值，在那之前入口卡片仍可点，用户连点会发起两轮
+ * pickAndRecognize。而 useRecognition 的状态是单例，两轮会互相污染——第一轮的 finally
+ * 把 recognizing 置 false，第二轮的加载态就提前消失、露出一张空表单。
+ */
+const busy = ref(false);
+
 /** 入口一：选图后按张数分流——单张走原流程，多张走批次流水线 */
 async function pickAndRecognize() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    await runPickAndRecognize();
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function runPickAndRecognize() {
   entryNotice.value = ''; // 与截图导入共用入口视图，开始新一轮就清掉上次的提示
   const paths = await chooseOnly(MAX_BATCH_SIZE);
   if (!paths.length) return;
@@ -149,8 +168,10 @@ async function pickAndRecognize() {
   });
 
   const outcome = await recognize(up.imageUrl);
-  // 跳过：用户要的是立刻看到表单。抠图可能仍在跑（cutting=true 会让加载态继续），
-  // 故这里不等它——表单先行，预览暂时用原图，抠图结果回来后自行替换。
+  // 用户已点跳过：UI 早由 onSkip 接管（表单已渲染、可能已在填），迟到的结果必须整条丢弃。
+  // recognize() 内部的 skipRequested 闸门只保护 composable 自身的状态，
+  // 而真正会覆盖用户输入的是下面那几行 form/formReady 赋值——闸门在调用方，不能只放在内部。
+  if (skipped.value) return;
   // 判定图中没有衣物：退回入口视图给提示，不让用户面对一个凑出来的表单
   // （抠图结果一并丢弃——它本就不阻断录入，此时也没有归宿）
   if (outcome.kind === 'not-garment') {
@@ -161,14 +182,8 @@ async function pickAndRecognize() {
     return;
   }
   form.value = outcome.kind === 'ok' ? outcome.result : null; // error → 先存图后补
-  // 跳过与「AI 没认出来」都是 error 态，但文案要分：跳过是用户自己的选择
-  recognitionNotice.value = skipped.value
-    ? 'skipped'
-    : outcome.kind === 'error'
-      ? 'failed'
-      : lowConfidence.value
-        ? 'low'
-        : '';
+  recognitionNotice.value =
+    outcome.kind === 'error' ? 'failed' : lowConfidence.value ? 'low' : '';
   formReady.value = true; // 识别已返回，不必再等抠图
   // 抠图不阻塞表单：完成时自行补挂预览
   void cutoutPromise;
@@ -228,6 +243,16 @@ async function saveBatch() {
 
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */
 async function pickScreenshotsAndExtract() {
+  if (busy.value) return;
+  busy.value = true;
+  try {
+    await runPickScreenshotsAndExtract();
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function runPickScreenshotsAndExtract() {
   entryNotice.value = '';
   formReady.value = false; // 新一轮提取开始，重新受加载态约束
   const urls = await chooseAndUploadMany(3);
