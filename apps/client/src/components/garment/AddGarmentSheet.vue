@@ -9,7 +9,7 @@
  * 单张与多张共用一个入口，选完按张数自动分流，不新增入口（简约克制）。
  * 对外接口：v-model:show 控制显隐，@created 通知父级刷新。
  */
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import AppSheet from '../base/AppSheet.vue';
 import AppButton from '../base/AppButton.vue';
 import AppLoading from '../base/AppLoading.vue';
@@ -32,7 +32,15 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'update:show', v: boolean): void; (e: 'created'): void }>();
 
 const { uploading, chooseOnly, uploadOne, chooseAndUploadMany } = useUpload();
-const { recognizing, recognizingHint, recognize, lowConfidence } = useRecognition();
+const {
+  recognizing,
+  recognizingHint,
+  recognize,
+  lowConfidence,
+  canSkip,
+  skipped,
+  skip,
+} = useRecognition();
 const { cutting, cutout } = useCutout();
 const {
   extracting,
@@ -47,10 +55,37 @@ const imageUrl = ref<string | null>(null);
 const cutoutImageUrl = ref<string | null>(null);
 const form = ref<GarmentDraft | null>(null);
 const saving = ref(false);
+/**
+ * 本轮是否已放行到表单（用户跳过或识别已返回）。
+ *
+ * 抠图与识别并行，抠图可能远慢于识别。若加载态只由 `cutting` 决定，
+ * 用户跳过之后仍会被抠图卡在 loading 页——跳过就失去了意义。
+ * 置 true 后由表单接管，抠图结果回来时只静默替换预览图。
+ */
+const formReady = ref(false);
 /** 本次是否走截图导入：决定失败文案与入库时的待补实物图标记 */
 const fromScreenshot = ref(false);
 /** 识别/提取结果提示条：failed=没读出来（先存后补），low=低置信度建议核对 */
-const recognitionNotice = ref<'' | 'failed' | 'low'>('');
+const recognitionNotice = ref<'' | 'failed' | 'low' | 'skipped'>('');
+/**
+ * 确认页提示条文案。
+ *
+ * 四种情况语义不同，别合并：
+ * - skipped：用户主动跳过 AI，是我们给的出口，不该说成「AI 没认出来」
+ * - failed：AI 真的没读出来（截图分支措辞不同，因为补的是截图不是实物图）
+ * - low：识别出来了但置信度低，提示核对
+ */
+const noticeText = computed(() => {
+  if (recognitionNotice.value === 'skipped') {
+    return '已跳过 AI，属性可稍后补充';
+  }
+  if (recognitionNotice.value === 'failed') {
+    return fromScreenshot.value
+      ? 'AI 没读出来，可以先存截图稍后补'
+      : 'AI 没认出这件衣物，可以先保存图片，稍后再补充信息';
+  }
+  return 'AI 对识别结果不太确定，建议核对后再保存';
+});
 /**
  * 入口页提示条：截图被判为非购物图时的说明。
  * 常驻入口视图而非 toast——用户重选图时还得看得见原因，故 reset() 不清它，
@@ -101,13 +136,21 @@ async function pickAndRecognize() {
   const up = await uploadOne(paths[0]);
   if (!up) return;
   fromScreenshot.value = false;
+  formReady.value = false; // 新一轮识别开始，重新受加载态约束
   imageUrl.value = up.imageUrl;
   cutoutImageUrl.value = null;
-  // 识别（读属性）与抠图（去背景）正交，前端并行、互不阻塞；两者失败都不阻断录入
-  const [outcome, cut] = await Promise.all([
-    recognize(up.imageUrl),
-    cutout(up.imageUrl),
-  ]);
+  // 识别（读属性）与抠图（去背景）正交，前端并行、互不阻塞；两者失败都不阻断录入。
+  //
+  // 跳过语义：用户点跳过时不能等 Promise.all 里最慢的那条线——抠图同样可能很慢。
+  // 故识别与抠图分开接：识别（或跳过）先到就先推进表单，抠图结果后到再补挂到预览上。
+  const cutoutPromise = cutout(up.imageUrl).then((url) => {
+    // 迟到结果只在仍是本轮（同一张图）时补挂，避免覆盖下一轮
+    if (url && imageUrl.value === up.imageUrl) cutoutImageUrl.value = url;
+  });
+
+  const outcome = await recognize(up.imageUrl);
+  // 跳过：用户要的是立刻看到表单。抠图可能仍在跑（cutting=true 会让加载态继续），
+  // 故这里不等它——表单先行，预览暂时用原图，抠图结果回来后自行替换。
   // 判定图中没有衣物：退回入口视图给提示，不让用户面对一个凑出来的表单
   // （抠图结果一并丢弃——它本就不阻断录入，此时也没有归宿）
   if (outcome.kind === 'not-garment') {
@@ -118,9 +161,32 @@ async function pickAndRecognize() {
     return;
   }
   form.value = outcome.kind === 'ok' ? outcome.result : null; // error → 先存图后补
-  cutoutImageUrl.value = cut; // 抠出白底则确认页预览换它，null 回退原图
-  recognitionNotice.value =
-    outcome.kind === 'error' ? 'failed' : lowConfidence.value ? 'low' : '';
+  // 跳过与「AI 没认出来」都是 error 态，但文案要分：跳过是用户自己的选择
+  recognitionNotice.value = skipped.value
+    ? 'skipped'
+    : outcome.kind === 'error'
+      ? 'failed'
+      : lowConfidence.value
+        ? 'low'
+        : '';
+  formReady.value = true; // 识别已返回，不必再等抠图
+  // 抠图不阻塞表单：完成时自行补挂预览
+  void cutoutPromise;
+}
+
+/**
+ * 跳过 AI 等待：立即进确认表单，走后补路径。
+ *
+ * recognize() 内部已丢弃迟到的结果（skipRequested 闸门），故这里只负责推进 UI。
+ * 同时置 formReady——否则抠图未完成会把页面继续按在 loading 上。
+ */
+function onSkip() {
+  const outcome = skip();
+  if (outcome.kind === 'error') {
+    form.value = null;
+    recognitionNotice.value = 'skipped';
+    formReady.value = true;
+  }
 }
 
 /** 批次「继续拍」：追加到现有队列，不清空已有项 */
@@ -163,6 +229,7 @@ async function saveBatch() {
 /** 入口二：选购物截图（1~3 张）直传后合并提取，预填名称/品牌/价格 */
 async function pickScreenshotsAndExtract() {
   entryNotice.value = '';
+  formReady.value = false; // 新一轮提取开始，重新受加载态约束
   const urls = await chooseAndUploadMany(3);
   if (!urls) return;
   fromScreenshot.value = true;
@@ -195,6 +262,7 @@ async function pickScreenshotsAndExtract() {
     : null;
   recognitionNotice.value =
     form.value === null ? 'failed' : extractLowConfidence.value ? 'low' : '';
+  formReady.value = true;
 }
 
 /** 确认入库；截图导入的衣物带待补实物图标记，详情页据此展示引导 */
@@ -223,6 +291,7 @@ function reset() {
   form.value = null;
   fromScreenshot.value = false;
   recognitionNotice.value = '';
+  formReady.value = false; // 回到入口视图，下一轮重新受加载态约束
 }
 function close() {
   emit('update:show', false);
@@ -265,20 +334,25 @@ function close() {
     </view>
 
     <!-- 上传/识别/抠图/提取中 -->
-    <AppLoading
-      v-else-if="uploading || recognizing || cutting || extracting"
-      :text="uploading ? '上传中…' : extracting ? extractingHint : recognizingHint"
-    />
+    <!-- formReady：用户已跳过或识别已返回 → 交给表单，不被仍在跑的抠图卡住 -->
+    <view
+      v-else-if="!formReady && (uploading || recognizing || cutting || extracting)"
+      class="loading-wrap"
+    >
+      <AppLoading
+        :text="uploading ? '上传中…' : extracting ? extractingHint : recognizingHint"
+      />
+      <!-- 跳过只对识别开放：上传/抠图/提取没有「先存后补」的等价路径 -->
+      <view v-if="canSkip && recognizing" class="skip" @click="onSkip">
+        <text class="skip__t">跳过 AI，先存图后补</text>
+      </view>
+    </view>
 
     <!-- 识别/提取完成：确认表单 -->
     <view v-else>
       <image class="preview" :src="cutoutImageUrl || imageUrl" mode="aspectFit" />
       <view v-if="recognitionNotice" class="notice" :class="`notice--${recognitionNotice}`">
-        <text>{{ recognitionNotice === 'failed'
-          ? (fromScreenshot
-            ? 'AI 没读出来，可以先存截图稍后补'
-            : 'AI 没认出这件衣物，可以先保存图片，稍后再补充信息')
-          : 'AI 对识别结果不太确定，建议核对后再保存' }}</text>
+        <text>{{ noticeText }}</text>
       </view>
       <RecognitionForm v-model="form" />
       <view class="actions">
@@ -299,5 +373,11 @@ function close() {
 .notice { margin-top: 16rpx; padding: 16rpx 20rpx; border-radius: $zy-radius-sm; font-size: 24rpx; line-height: 1.5; }
 .notice--failed { background: rgba(230, 162, 60, 0.1); color: #b8863b; }
 .notice--low { background: rgba(64, 128, 255, 0.08); color: #4a6fa5; }
+/* 跳过是用户自己的选择，用中性色；failed 的琥珀色暗示「出了问题」，语义不对 */
+.notice--skipped { background: $zy-surface; color: $zy-ink-2; }
 .actions { display: flex; gap: 16rpx; margin-top: 24rpx; }
+.loading-wrap { display: flex; flex-direction: column; align-items: center; }
+.skip { margin-top: 32rpx; padding: 16rpx 32rpx; border: 2rpx solid $zy-line;
+  border-radius: $zy-radius-sm; }
+.skip__t { font-size: 26rpx; color: $zy-ink-2; }
 </style>

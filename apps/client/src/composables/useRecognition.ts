@@ -17,6 +17,14 @@ import { recognizeGarment } from '../api/garment.api';
 
 /** 等待超过此时长（毫秒）切换第二阶段文案 */
 const SLOW_HINT_DELAY_MS = 12000;
+/**
+ * 等待超过此时长（毫秒）才允许「跳过 AI」。
+ *
+ * 比 SLOW_HINT_DELAY_MS 晚 3 秒：先让用户看到「正在换个思路」的反馈，
+ * 再给出口。用户过早放弃会白等一次（后台请求仍会跑完）。
+ * 两个常量语义不同，不要合并。
+ */
+const SKIP_ENABLE_DELAY_MS = 15000;
 
 /**
  * 识别结果三态。用可辨识联合而非「结果 + 布尔标记」：
@@ -34,7 +42,31 @@ export function useRecognition() {
   const recognizing = ref(false);
   const lowConfidence = ref(false);
   const recognizingHint = ref('AI 识别中…');
+  /** 等待够久、可以显示「跳过 AI」按钮 */
+  const canSkip = ref(false);
+  /** 本次是用户主动跳过的（用于区别于「AI 没认出来」的文案） */
+  const skipped = ref(false);
   let slowHintTimer: ReturnType<typeof setTimeout> | null = null;
+  let skipTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 用户已点跳过：请求返回后据它丢弃结果。
+   *
+   * 为什么需要闸门：`uni.request` 的 Promise 无法中途取消，用户点跳过只是
+   * 「不再等」，底层请求仍会跑完。若不丢弃，迟到的结果会覆盖用户正在填的表单。
+   */
+  let skipRequested = false;
+
+  /** 清掉两个等待计时器（正常返回与跳过路径都要清，防定时器继续改 UI） */
+  function clearTimers() {
+    if (slowHintTimer) {
+      clearTimeout(slowHintTimer);
+      slowHintTimer = null;
+    }
+    if (skipTimer) {
+      clearTimeout(skipTimer);
+      skipTimer = null;
+    }
+  }
 
   /**
    * 识别一张已上传的衣物图。
@@ -45,11 +77,19 @@ export function useRecognition() {
     recognizing.value = true;
     lowConfidence.value = false;
     recognizingHint.value = 'AI 识别中…';
+    canSkip.value = false;
+    skipped.value = false;
+    skipRequested = false;
     slowHintTimer = setTimeout(() => {
       recognizingHint.value = '有点慢，AI 正在换个思路…';
     }, SLOW_HINT_DELAY_MS);
+    skipTimer = setTimeout(() => {
+      canSkip.value = true;
+    }, SKIP_ENABLE_DELAY_MS);
     try {
       const res = await recognizeGarment(imageUrl);
+      // 用户已跳过：结果直接丢弃，不碰任何状态（否则会覆盖用户正在填的表单）
+      if (skipRequested) return { kind: 'error' };
       // 后端不抛错，用 recognized + reason 标记：非衣物要拦，技术故障要放行
       if (!res.recognized) {
         return res.reason === 'irrelevant'
@@ -63,12 +103,24 @@ export function useRecognition() {
       // 网络异常等静默兜底：不弹错误，按故障态让页面走「先存图后补」
       return { kind: 'error' };
     } finally {
-      if (slowHintTimer) {
-        clearTimeout(slowHintTimer);
-        slowHintTimer = null;
-      }
+      clearTimers();
       recognizing.value = false;
     }
+  }
+
+  /**
+   * 跳过等待：立即放行 UI，让调用方走「先存图后补」。
+   *
+   * 返回 error 态而非新增 kind：调用方对 error 的处理正是「进确认表单 + 提示可稍后补」，
+   * 与跳过的期望一致。新增一支只会让穷尽分支多做同样的事。
+   */
+  function skip(): RecognizeOutcome {
+    skipRequested = true;
+    skipped.value = true;
+    canSkip.value = false;
+    recognizing.value = false;
+    clearTimers();
+    return { kind: 'error' };
   }
 
   return {
@@ -76,5 +128,8 @@ export function useRecognition() {
     recognizingHint,
     recognize,
     lowConfidence,
+    canSkip,
+    skipped,
+    skip,
   };
 }
