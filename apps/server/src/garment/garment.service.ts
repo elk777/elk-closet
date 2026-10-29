@@ -11,6 +11,7 @@
  */
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { dirname, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sharp from 'sharp';
@@ -55,6 +56,22 @@ const CLEAN_BG_MAX_STDEV = 25;
 const CLEAN_BG_MIN_BANDS = 3;
 /** 采样的边缘窄带占短边的比例 */
 const CLEAN_BG_BAND_RATIO = 0.06;
+
+/**
+ * 识别结果缓存有效期（30 分钟）。
+ *
+ * 只为覆盖「重试窗口」：用户点重试、前端超时重提、批量录入重复排队。
+ * 不设更长是因为识别结果虽无时效性，但缓存太久会让上游模型升级 / prompt 调整
+ * 之后「改了却看不出效果」，排查时极易误判。
+ */
+const RECOGNIZE_CACHE_TTL_MS = 30 * 60 * 1000;
+/**
+ * 识别结果缓存条数上限。
+ *
+ * 单条 RecognitionResult 约 1KB，200 条约 200KB，对 Node 进程可忽略。
+ * 必须有上限：否则长期运行的服务会随不同图片无界增长。
+ */
+const RECOGNIZE_CACHE_MAX = 200;
 
 /**
  * 判断原图背景是否已经足够干净（近白底），此时抠图无收益、反而有害。
@@ -139,9 +156,46 @@ const CROP_PAD_RATIO_Y = 0;
  */
 const TOP_INSET_RATIO = 0.04;
 
+/**
+ * 识别缓存键：图片 URL + 品类候选集（含 majorType 归属）的指纹。
+ *
+ * 为什么品类必须进键：`buildRecognitionSystemPrompt` 会把用户的品类白名单拼进
+ * system prompt，用户增删自定义分类后同一张图的结果会变（可能从「其他」变为命中
+ * 新分类，majorType 归属也可能不同）。只按 URL 缓存会返回过期语义的结果。
+ * 为什么哈希而非直接拼串：品类可达几十项，拼成 Map 键既长又有分隔符歧义。
+ * @param imageUrl 图 URL（又拍云 UUID 路径，同一 URL 内容不变）
+ * @param names 用户品类候选集
+ * @param majorTypes 品类→大类映射
+ * @returns 定长十六进制指纹
+ */
+function recognizeCacheKey(
+  imageUrl: string,
+  names: readonly string[],
+  majorTypes: ReadonlyMap<string, string>,
+): string {
+  const majorPart = names
+    .map((n) => `${n}:${majorTypes.get(n) ?? ''}`)
+    .join(',');
+  return createHash('sha256').update(`${imageUrl}|${majorPart}`).digest('hex');
+}
+
 @Injectable()
 export class GarmentService {
   private readonly logger = new Logger(GarmentService.name);
+
+  /**
+   * 识别结果缓存（内存级，键见 recognizeCacheKey）。
+   *
+   * 为什么用 URL 而非图片内容哈希当键：算哈希必须先下载原图（实测种子图
+   * 1.0~1.6MB，下载 0.37~0.88s），那样「命中缓存」也快不到哪去。又拍云上传路径
+   * 由 randomUUID 生成，同一 URL 的内容不会变，用它当内容指纹语义上成立，
+   * 命中时只需一次内存查表。
+   * 代价：同一张图重新上传会得到新 URL，不命中——本缓存只覆盖「同一请求重试」。
+   */
+  private readonly recognizeCache = new Map<
+    string,
+    { result: RecognitionResult; at: number }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -166,7 +220,19 @@ export class GarmentService {
     imageUrl: string,
   ): Promise<{ result: RecognitionResult; notGarment: boolean }> {
     const { names, majorTypes } = await this.categories.namesOf(ownerId);
+
+    const key = recognizeCacheKey(imageUrl, names, majorTypes);
+    const cached = this.readRecognizeCache(key);
+    if (cached) {
+      // 缓存只存 RecognitionResult：notGarment 是它的纯函数投影（isGarment === false），
+      // 无须另存一份，避免两份信息不同步
+      return { result: cached, notGarment: isNotGarment(cached) };
+    }
+
     const result = await this.ai.recognize({ imageUrl, categories: names });
+    // 走到这里说明调用成功（异常会直接向上抛），失败态因此天然不会入缓存
+    this.writeRecognizeCache(key, result);
+
     if (isNotGarment(result)) {
       this.logger.warn('模型判定图中没有服装或配饰，不作为可录入结果返回');
       return { result, notGarment: true };
@@ -186,6 +252,42 @@ export class GarmentService {
       result: { ...result, majorType: majorTypeOf(result.category, majorTypes) },
       notGarment: false,
     };
+  }
+
+  /**
+   * 读识别缓存；过期即删并视为未命中。
+   *
+   * 惰性判断而非定时清扫：识别不是高频接口，扫一遍全表只为删几条已过期的
+   * 没有收益，访问时顺手清理足够。
+   * @param key 缓存键
+   * @returns 命中的结果；未命中或已过期返回 null
+   */
+  private readRecognizeCache(key: string): RecognitionResult | null {
+    const entry = this.recognizeCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.at >= RECOGNIZE_CACHE_TTL_MS) {
+      this.recognizeCache.delete(key);
+      return null;
+    }
+    this.logger.debug(`识别缓存命中：${key.slice(0, 8)}`);
+    return entry.result;
+  }
+
+  /**
+   * 写识别缓存；满员时淘汰最早插入的一条。
+   *
+   * Map 的迭代顺序即插入顺序，`keys().next()` 拿到的就是最老的一条，
+   * 无需额外维护队列。淘汰策略用 FIFO 而非 LRU：识别缓存的读取集中在
+   * 重试窗口内，热度与新旧基本正相关，LRU 的额外维护成本换不来收益。
+   * @param key 缓存键
+   * @param result 识别结果（仅在调用成功后写入）
+   */
+  private writeRecognizeCache(key: string, result: RecognitionResult): void {
+    if (this.recognizeCache.size >= RECOGNIZE_CACHE_MAX) {
+      const oldest = this.recognizeCache.keys().next().value;
+      if (oldest !== undefined) this.recognizeCache.delete(oldest);
+    }
+    this.recognizeCache.set(key, { result, at: Date.now() });
   }
 
   /**
