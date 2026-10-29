@@ -139,7 +139,7 @@ export class RecommendService {
   }
 
   /**
-   * 智能搭配：按 场合 / 风格 / 季节 维度从衣橱搭配 1~3 套（PRD 4.5）。
+   * 智能搭配：按 场合 / 风格 / 季节 维度从衣橱搭配 2 套（PRD 4.5）。
    *
    * 与 today 同构，差异：
    * - 不绑天气：搭配由用户选的维度决定，季节维度更权威
@@ -395,7 +395,35 @@ export class RecommendService {
   }
 
   /**
+   * 把衣橱摘要的 id 换成短序号别名（1..N），省掉发往模型的 cuid 体积。
+   *
+   * 26 件衣橱的清单里，cuid 主键占 47% 的字符，而这些字符对模型毫无信息量——
+   * 它只需要「一个能回填的编号」。换成序号后清单体积明显下降，直接减轻 tpm 压力。
+   *
+   * 映射放在这里而不是 prompt 构造里：`buildRecommendUserPrompt` 被 anthropic /
+   * openai 两个 Provider 共用，映射若常驻模块级状态，并发请求会互相串号。
+   * 按请求生成、用完即弃才是安全的。
+   * @param wardrobe 原始摘要（id 为真 cuid）
+   * @returns 别名化后的摘要 + 别名→真 id 映射
+   */
+  private aliasWardrobe(wardrobe: WardrobeBriefItem[]): {
+    aliased: WardrobeBriefItem[];
+    idByAlias: Map<string, string>;
+  } {
+    const idByAlias = new Map<string, string>();
+    const aliased = wardrobe.map((item, i) => {
+      const alias = String(i + 1);
+      idByAlias.set(alias, item.id);
+      return { ...item, id: alias };
+    });
+    return { aliased, idByAlias };
+  }
+
+  /**
    * 调 AI 出搭配并回填成完整 Garment（今日推荐与智能搭配共用）。
+   *
+   * 发给模型前把衣橱 id 换成短序号别名（见 aliasWardrobe），返回后按别名翻回真 id
+   * 再展开成完整衣物。别名只活在这一次调用的内存里，前端拿到的始终是真 id。
    *
    * 剔除 AI 编造的 id（pruneRecommend），再把合法 id 展开为完整衣物供前端渲染。
    * AI 整体失败（含重试）不抛错，返回空数组，由上层降级为 empty。
@@ -409,19 +437,39 @@ export class RecommendService {
     pool: Garment[],
   ): Promise<RecommendedOutfitView[]> {
     try {
-      const output = await this.ai.recommend(input);
-      const validIds = new Set(pool.map((g) => g.id));
-      const pruned = pruneRecommend(output, validIds);
+      // 别名化只影响本次请求：input 是每次调用现构造的对象，就地改写安全
+      const { aliased, idByAlias } = this.aliasWardrobe(input.wardrobe);
+      const output = await this.ai.recommend({ ...input, wardrobe: aliased });
+
+      // 先把模型返回的别名规范化再交 pruneRecommend 校验。
+      // 顺序不能反：模型常把 prompt 里的 `id=3` 或带空白的 `" 1 "` 照抄回来，
+      // 这些是合法引用，若直接拿别名集合去校验会被判成编造而误删。
+      const normalized = {
+        outfits: output.outfits.map((o) => ({
+          ...o,
+          itemIds: o.itemIds.map((s) => s.trim().replace(/^id\s*=\s*/i, '')),
+        })),
+      };
+      // 校验集合用别名：模型看到的就是别名，它「编造」也只可能在别名空间里编
+      const validAliases = new Set(idByAlias.keys());
+      const pruned = pruneRecommend(normalized, validAliases);
+
       const byId = new Map(pool.map((g) => [g.id, g]));
-      return pruned.outfits.map((o) => ({
-        items: o.itemIds
-          .map((id) => byId.get(id))
-          .filter((g): g is Garment => Boolean(g)),
-        occasion: o.occasion,
-        styleTag: o.styleTag,
-        matchScore: o.matchScore,
-        reason: o.reason,
-      }));
+      return pruned.outfits
+        .map((o) => ({
+          items: o.itemIds
+            .map((alias) => {
+              const realId = idByAlias.get(alias);
+              return realId ? byId.get(realId) : undefined;
+            })
+            .filter((g): g is Garment => Boolean(g)),
+          occasion: o.occasion,
+          styleTag: o.styleTag,
+          matchScore: o.matchScore,
+          reason: o.reason,
+        }))
+        // 别名解析后可能整套落空（例如模型全填了编造别名），这类套装不能展示
+        .filter((o) => o.items.length > 0);
     } catch (e) {
       this.logger.warn(`搭配生成失败：${String(e)}`);
       return [];

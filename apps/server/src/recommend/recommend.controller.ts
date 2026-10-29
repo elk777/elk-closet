@@ -20,7 +20,7 @@ export class RecommendController {
   constructor(private readonly recommend: RecommendService) {}
 
   /**
-   * 今日推荐：结合天气与场合，从用户衣橱搭配 1~3 套。
+   * 今日推荐：结合天气与场合，从用户衣橱搭配 2 套。
    * @param user 当前登录用户
    * @param dto 可选经纬度（前端定位）与场合
    * @returns 三态今日推荐
@@ -34,7 +34,7 @@ export class RecommendController {
   }
 
   /**
-   * 智能搭配：按场合 / 风格 / 季节维度从用户衣橱搭配 1~3 套。
+   * 智能搭配：按场合 / 风格 / 季节维度从用户衣橱搭配 2 套。
    * @param user 当前登录用户
    * @param dto 场合 / 风格 / 季节维度（均可选）
    * @returns 四态搭配结果
