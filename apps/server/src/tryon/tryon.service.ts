@@ -9,6 +9,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { TryOnItem, TryOnResponse } from '@zhiyi/shared';
 import { AiService, TryOnFailedError } from '../ai/ai.service';
+import { GarmentService } from '../garment/garment.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UploadService } from '../upload/upload.service';
 
@@ -26,6 +27,7 @@ export class TryOnService {
     private readonly prisma: PrismaService,
     private readonly ai: AiService,
     private readonly upload: UploadService,
+    private readonly garments: GarmentService,
   ) {}
 
   /**
@@ -105,9 +107,11 @@ export class TryOnService {
       return { status: 'failed', imageUrl: '' };
     }
 
-    // 3. 组装单品图（抠图优先、回退原图）与简述
-    const items: TryOnItem[] = garments.slice(0, MAX_TRYON_ITEMS).map((g) => ({
-      imageUrl: g.cutoutImageUrl || g.originalImageUrl,
+    // 3. 组装单品图与简述：缺抠图的先懒补（带背景原图会拖慢模型合成）
+    const picked = garments.slice(0, MAX_TRYON_ITEMS);
+    const imageUrls = await this.resolveItemImages(ownerId, picked);
+    const items: TryOnItem[] = picked.map((g, i) => ({
+      imageUrl: imageUrls[i],
       brief: `${g.mainColor}${g.category}（${g.name}）`,
     }));
 
@@ -127,6 +131,49 @@ export class TryOnService {
       this.logger.error(`试穿失败，降级：${reason}`);
       return { status: 'failed', imageUrl: '' };
     }
+  }
+
+  /**
+   * 解析本套单品的试穿用图：已有抠图直接用，缺失则懒补一次并回写库。
+   *
+   * 为什么要懒补：带背景的衣服图会让图像模型多做一层「分离主体」的推理，
+   * 合成难度与耗时都更高。回写后同一件衣物后续试穿直接命中，不再重算——
+   * 属于「首次慢一点、长期快很多」的交换。
+   *
+   * 抠图是锦上添花：cutoutGarment 内部已全兜底（失败/原图已是白底返回 null），
+   * 这里只负责回退原图，绝不阻断试穿主链路。
+   *
+   * 并发：整套通常 3~5 件，Promise.all 并行；若日志出现 OOM 改为并发上限 2 的池。
+   * @param ownerId 归属用户（抠图上传目录隔离）
+   * @param rows 已校验归属与未软删除的单品行
+   * @returns 与 rows 等长的图片 URL 数组；失败位置回退原图
+   */
+  private async resolveItemImages(
+    ownerId: string,
+    rows: GarmentImageRow[],
+  ): Promise<string[]> {
+    return Promise.all(
+      rows.map(async (g) => {
+        if (g.cutoutImageUrl) return g.cutoutImageUrl;
+        const cutout = await this.garments.cutoutGarment(
+          ownerId,
+          g.originalImageUrl,
+        );
+        // null 有两种含义：抠图失败、「原图已够干净」。两者都继续用原图，
+        // 且不写库——避免每次试穿都重复跑一遍检测。
+        if (!cutout) return g.originalImageUrl;
+        try {
+          await this.prisma.garment.update({
+            where: { id: g.id },
+            data: { cutoutImageUrl: cutout },
+          });
+        } catch (err) {
+          // 回写失败不影响本次试穿（新图已在手），下次仍会再试
+          this.logger.warn(`抠图结果回写失败，本次仍用新图：${String(err)}`);
+        }
+        return cutout;
+      }),
+    );
   }
 }
 

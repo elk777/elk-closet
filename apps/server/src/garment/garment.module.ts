@@ -7,6 +7,8 @@
  * - CategoryModule：注入 CategoryService 做品类校验与 AI 候选集拼装
  * - UploadModule：注入 UploadService，截图裁出的商品图落又拍云（putImage）
  * PrismaModule 为全局，无需在此 import。
+ *
+ * 导出 GarmentService 供 TryOnModule 复用抠图能力（试穿时懒补单品主图）。
  */
 
 import { Module } from '@nestjs/common';
@@ -21,5 +23,6 @@ import { GarmentService } from './garment.service';
   imports: [AiModule, AuthModule, CategoryModule, UploadModule],
   controllers: [GarmentController],
   providers: [GarmentService],
+  exports: [GarmentService],
 })
 export class GarmentModule {}

@@ -87,6 +87,16 @@ const RECOGNIZE_CACHE_MAX = 200;
  * @param image 原图 buffer（任意 sharp 可读格式）
  * @returns true=背景已干净，应跳过抠图
  */
+/**
+ * 原图背景是否已足够干净（近白底且平整），干净则跳过抠图。
+ *
+ * 只判定四条边缘带，不判整图：衣服主体通常占中间，抠图收益取决于背景，
+ * 边缘能代表背景。四条边中 3 条以上达标即视为干净。
+ *
+ * @imgly 的 removeBackground 本身就重，能在前面用几百毫秒拦掉就值。
+ * @param image 原始图片字节
+ * @returns true = 背景已近白底，抠图无收益（且可能糊掉水印）
+ */
 async function hasCleanBackground(image: Buffer): Promise<boolean> {
   const gray = sharp(image).greyscale();
   const { width, height } = await gray.metadata();
