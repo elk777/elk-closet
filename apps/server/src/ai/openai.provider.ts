@@ -57,6 +57,17 @@ const VISION_MAX_EDGE = 768;
 /** 喂图统一转 JPEG 的压缩质量 */
 const VISION_JPEG_QUALITY = 80;
 
+/**
+ * 试穿传图长边上限（像素）：比识别的 768 大。
+ *
+ * 识别只需判定属性，768 足够；试穿要还原版型层次与人物比例，768 会丢细节。
+ * 1024 是「显著减小上传体积」与「保住版型」的折中——原图动辄 1.2~2.0MB，
+ * 压缩后单张降到数百 KB，模型预处理也更快。
+ */
+const TRYON_MAX_EDGE = 1024;
+/** 试穿传图 JPEG 质量 */
+const TRYON_JPEG_QUALITY = 85;
+
 export class OpenAiProvider implements AiProvider {
   private readonly client: OpenAI;
 
@@ -277,9 +288,12 @@ export class OpenAiProvider implements AiProvider {
     opts?: AiCallOptions,
   ): Promise<string> {
     // 底图在前、单品图在后：与 prompt 的「第一张是人物、其余是单品」表述对应
+    // 传压缩图而非原图：原图单张 1.2~2.0MB，压缩后显著缩短上传与模型预处理耗时
     const files = await Promise.all([
-      this.urlToFile(input.bodyPhotoUrl, 'body'),
-      ...input.items.map((it, i) => this.urlToFile(it.imageUrl, `item-${i}`)),
+      this.urlToFileCompressed(input.bodyPhotoUrl, 'body'),
+      ...input.items.map((it, i) =>
+        this.urlToFileCompressed(it.imageUrl, `item-${i}`),
+      ),
     ]);
 
     const res = await this.client.images.edit(
@@ -346,11 +360,18 @@ export class OpenAiProvider implements AiProvider {
   }
 
   /**
-   * 抓取图片 URL 转成 SDK 可上传的 File（multipart）。
+   * 抓取图片 URL，压到试穿适用尺寸后转成 SDK 可上传的 File（multipart）。
+   *
+   * 为什么压缩（2026-10-30 试穿提速）：原图单张 1.2~2.0MB，直接 multipart
+   * 上传既慢又让模型多做预处理。属性判定不需要高分，试穿同理——长边 1024
+   * 足以还原本型层次。压缩参数见 {@link TRYON_MAX_EDGE}。
+   *
+   * sharp 读不了的罕见格式回退原始 buffer：宁可慢也不断链路，与
+   * {@link urlToDataUrl} 的降级策略一致。
    * @param url 公开可访问的图片 URL
-   * @param name 文件名（仅标识用，扩展名让服务端按 content-type 判断）
+   * @param name 文件名前缀（仅标识用）
    */
-  private async urlToFile(
+  private async urlToFileCompressed(
     url: string,
     name: string,
   ): Promise<Awaited<ReturnType<typeof toFile>>> {
@@ -358,9 +379,23 @@ export class OpenAiProvider implements AiProvider {
     if (!resp.ok) {
       throw new Error(`抓取试穿图失败(${resp.status})：${url}`);
     }
-    const type = resp.headers.get('content-type') ?? 'image/jpeg';
-    const buf = Buffer.from(await resp.arrayBuffer());
-    const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
-    return toFile(buf, `${name}.${ext}`, { type });
+    const original = Buffer.from(await resp.arrayBuffer());
+    try {
+      const compressed = await sharp(original)
+        .rotate()
+        .resize(TRYON_MAX_EDGE, TRYON_MAX_EDGE, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .flatten({ background: '#ffffff' })
+        .jpeg({ quality: TRYON_JPEG_QUALITY })
+        .toBuffer();
+      return toFile(compressed, `${name}.jpg`, { type: 'image/jpeg' });
+    } catch {
+      // 特殊格式 sharp 解不开：按原始字节与真实 MIME 上传
+      const type = resp.headers.get('content-type') ?? 'image/jpeg';
+      const ext = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : 'jpg';
+      return toFile(original, `${name}.${ext}`, { type });
+    }
   }
 }
