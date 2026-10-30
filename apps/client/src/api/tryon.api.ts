@@ -27,8 +27,9 @@ export function tryOnOutfit(payload: TryOnOutfitPayload) {
   return http.post<TryOnResponse>(
     '/tryon/outfit',
     payload as unknown as Record<string, unknown>,
-    // 图像生成比文本更慢，放宽到 120s，避免慢一点就被误判为网络异常
-    { timeout: 120000 },
+    // 图像模型实测单次生成 131~154s（2026-10-30 复现），后端主备最坏 300s。
+    // 前端必须比整条后端链路宽，否则永远先于后端断开、把成功误判为失败。
+    { timeout: 300000 },
   );
 }
 
