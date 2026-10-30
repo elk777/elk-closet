@@ -6,7 +6,9 @@
     <view class="topbar" :style="{ paddingTop: menuTop + 'px' }">
       <!-- 左：品牌区，logo + 衣柜名 + 副标题，竖排跨两行高并垂直居中 -->
       <view class="brand">
-        <view class="logo">衣</view>
+        <view class="logo">
+          <image class="logo__img" src="/static/logo-badge.png" mode="aspectFit" />
+        </view>
         <view class="brand__text">
           <text class="name">{{ closetName }}</text>
           <text v-if="garmentCount != null" class="brand__tip">
@@ -423,11 +425,13 @@ function goCheckIn(items: { id: string }[]) {
   height: 32px;
   border-radius: 10px;
   background: $zy-accent;
-  color: #fff;
-  font-size: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  /* 图片自带透明留白，无需内边距；底板与圆角交给 CSS，避免与图片里的圆角叠加 */
+  overflow: hidden;
+}
+.logo__img {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 .name {
   font-size: 18px;
