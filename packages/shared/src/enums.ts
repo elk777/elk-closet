@@ -106,12 +106,14 @@ export type StyleOption = (typeof STYLE_OPTIONS)[number];
  * - outfits：穿搭日记照（公开读，P1）
  * - tryon：AI 试穿图（敏感，P2，将来私有桶）
  * - body：全身照（敏感，P2，将来私有桶）
+ * - avatars：用户头像（公开读——头像本就是对外展示的信息）
  */
 export const UPLOAD_RESOURCE_TYPES = [
   'garments',
   'outfits',
   'tryon',
   'body',
+  'avatars',
 ] as const;
 export type UploadResourceType = (typeof UPLOAD_RESOURCE_TYPES)[number];
 
