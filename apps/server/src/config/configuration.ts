@@ -110,8 +110,13 @@ export interface UpyunConfig {
   signExpire: number;
 }
 
-/**
- * 和风天气配置（今日推荐的天气输入，PRD 4.5）。
+/** 微信小程序配置：code 换 openid 用的凭证（只在小程序端登录时用到） */
+export interface WxConfig {
+  appid: string;
+  secret: string;
+}
+
+/** 和风天气配置（今日推荐的天气输入，PRD 4.5）。
  *
  * apiHost 为账号专属域名（和风控制台「设置」页可见），非旧的公共 devapi 域名；
  * defaultLon/defaultLat 为定位失败时的兜底城市经纬度（小程序定位需资质，
@@ -247,6 +252,20 @@ export const upyunConfig = registerAs(
   }),
 );
 
+/**
+ * 微信小程序配置。
+ *
+ * 允许为空字符串：H5 调试与本地开发走 dev-login，不需要微信凭证。
+ * 生产环境缺这两项由 AuthService 在启动期拦下，不在配置层强制。
+ */
+export const wxConfig = registerAs(
+  'wx',
+  (): WxConfig => ({
+    appid: process.env.WX_APPID ?? '',
+    secret: process.env.WX_SECRET ?? '',
+  }),
+);
+
 export const weatherConfig = registerAs(
   'weather',
   (): WeatherConfig => ({
@@ -266,5 +285,6 @@ export const configFactories = [
   jwtConfig,
   aiConfig,
   upyunConfig,
+  wxConfig,
   weatherConfig,
 ];

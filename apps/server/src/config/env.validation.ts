@@ -51,6 +51,13 @@ export const envSchema = z.object({
   UPYUN_UPLOAD_DIR: z.string().min(1).default('garments'),
   UPYUN_SIGN_EXPIRE: z.coerce.number().int().min(60).default(600),
 
+  // ── 微信小程序 ──
+  // 可选而非必填：H5 开发、灌数据脚本、CI 都不具备微信环境，强制非空会让本地
+  // 起不来服务。生产环境另由 AuthService 启动期校验，缺配置直接拒绝启动
+  // （与「dev-login 生产禁用」配对：生产必须真登录，开发可以假登录）。
+  WX_APPID: z.string().optional().default(''),
+  WX_SECRET: z.string().optional().default(''),
+
   // ── 和风天气（今日推荐的天气输入）──
   // 全部可选：未配置时今日推荐按季节降级，不阻塞链路，故不强制非空。
   QWEATHER_API_HOST: z.string().optional().default(''),
