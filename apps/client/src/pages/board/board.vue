@@ -5,6 +5,15 @@
       <AppLoading text="正在盘点衣橱…" />
     </view>
 
+    <!-- 游客态：未登录。看板全是个人数据，先引导登录 -->
+    <view v-else-if="guest" class="empty">
+      <text class="empty-t">登录后查看衣橱看板</text>
+      <text class="empty-s">衣物利用率、压箱底清单都按你的衣橱统计</text>
+      <view class="empty-cta" @click="goLogin">
+        <text>微信登录</text>
+      </view>
+    </view>
+
     <!-- 数据不足：不展示误导性图表（PRD 5.6） -->
     <view v-else-if="insights.total < MIN_ITEMS" class="empty">
       <text class="empty-t">衣橱再丰富点，数据会更有意思</text>
@@ -101,6 +110,8 @@ const MIN_ITEMS = 3;
 const userStore = useUserStore();
 const loading = ref(true);
 const garments = ref<Garment[]>([]);
+/** 游客态：未登录。与「数据不足」区分，后者是已登录但件数少 */
+const guest = ref(false);
 
 /** 看板全部指标，一次从衣物列表算出（算法在 shared） */
 const insights = computed<ClosetInsights>(() => computeInsights(garments.value));
@@ -125,13 +136,23 @@ function pct(ratio: number): string {
 async function load() {
   loading.value = true;
   try {
-    if (!(await userStore.ensureLogin())) return;
+    // 未登录：走游客引导，不发请求
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     garments.value = await listGarments();
   } catch {
     // 错误提示已由 request / ensureLogin 统一处理
   } finally {
     loading.value = false;
   }
+}
+
+/** 去登录页（游客态入口） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
 }
 
 // 每次进入刷新，保证反哺后的穿着数据即时反映到看板

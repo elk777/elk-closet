@@ -1,5 +1,15 @@
 <template>
   <view class="settings">
+    <!-- 游客态：设置页全是账号级数据，未登录时只给登录入口 -->
+    <view v-if="guest" class="panel panel--guest">
+      <text class="panel__title">还没登录</text>
+      <text class="hint">衣柜名、分类、试穿全身照都归属你的微信账号，登录后才能设置。</text>
+      <view class="btn btn--wide" @click="goLogin">
+        <text>微信登录</text>
+      </view>
+    </view>
+
+    <template v-else>
     <!-- 个人资料：小程序端可设，H5 端无微信能力，显示降级文案 -->
     <view class="panel">
       <text class="panel__title">个人资料</text>
@@ -96,6 +106,7 @@
     <view class="signout" @click="confirmLogout">
       <text>退出登录</text>
     </view>
+    </template>
   </view>
 </template>
 
@@ -144,6 +155,8 @@ const nicknameInitial = computed(() => {
 
 const closetNameDraft = ref('');
 const savingName = ref(false);
+/** 游客态：未登录。设置页全是账号级数据，此时只展示登录引导 */
+const guest = ref(false);
 
 const categories = ref<CategoryRecord[]>([]);
 /** 两组添加输入框各自的草稿 */
@@ -168,8 +181,12 @@ const bodyPhotoUrl = computed(() => userStore.user?.bodyPhotoUrl ?? null);
 
 // onShow 而非 onMounted：从搭配页上传全身照后返回，此页需反映最新状态
 onShow(async () => {
-  // 未登录会跳登录页并返回 false：就此中止，不带着空用户渲染设置项
-  if (!(await userStore.ensureLogin())) return;
+  // 设置页全是账号级数据：未登录时不渲染表单，改为引导登录
+  if (!(await userStore.ensureLogin())) {
+    guest.value = true;
+    return;
+  }
+  guest.value = false;
   closetNameDraft.value = userStore.user?.closetName ?? '';
   nicknameDraft.value = userStore.user?.nickname ?? '';
   try {
@@ -257,6 +274,11 @@ function confirmLogout() {
       userStore.logout();
     },
   });
+}
+
+/** 去登录页（游客态入口） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
 }
 
 /** 添加分类：长度/重名由后端把关（请求器统一 toast），前端只拦空值 */
@@ -447,6 +469,14 @@ function confirmRemoveBodyPhoto() {
 }
 .btn--dis {
   opacity: 0.6;
+}
+.btn--wide {
+  width: 100%;
+  margin-top: 4px;
+  text-align: center;
+}
+.panel--guest {
+  gap: 14px;
 }
 .btn--ghost {
   background: $zy-bg;

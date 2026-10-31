@@ -49,11 +49,20 @@
       <AppLoading text="正在加载衣橱…" />
     </view>
 
+    <!-- 游客态：未登录。不说「空衣橱」，那会让人以为数据丢了 -->
+    <view v-else-if="guest" class="empty">
+      <text class="empty-t">登录后查看你的衣橱</text>
+      <text class="empty-s">衣物按账号保存，换手机也不会丢</text>
+      <view class="empty-cta" @click="goLogin">
+        <text>微信登录</text>
+      </view>
+    </view>
+
     <!-- 首启空态：欢迎 + 引导添加第一件（PRD 4.9 冷启动） -->
     <view v-else-if="garments.length === 0" class="empty">
       <text class="empty-t">拍下第一件衣服，我来帮你打理</text>
       <text class="empty-s">添加 3-5 件，解锁第一套专属搭配</text>
-      <view class="empty-cta" @click="showAdd = true">
+      <view class="empty-cta" @click="openAdd">
         <text>添加第一件衣服</text>
       </view>
     </view>
@@ -149,7 +158,7 @@
     </template>
 
     <!-- 悬浮添加按钮 -->
-    <view class="fab" @click="showAdd = true">
+    <view class="fab" @click="openAdd">
       <text>＋ 添加衣物</text>
     </view>
 
@@ -185,6 +194,8 @@ const ALL = '__all__';
 const garments = ref<Garment[]>([]);
 const loading = ref(true);
 const showAdd = ref(false);
+/** 游客态：未登录。与「空衣橱」区分，避免让人以为数据丢了 */
+const guest = ref(false);
 const activeCategory = ref<string>(ALL);
 
 /** 搜索关键词；非空即进入搜索态（覆盖分类筛选） */
@@ -246,7 +257,12 @@ function onSearchBlur() {
 async function loadGarments() {
   loading.value = true;
   try {
-    if (!(await userStore.ensureLogin())) return;
+    // 未登录：走游客引导，不发请求（否则必然 401 并弹错误提示）
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     garments.value = await listGarments();
   } catch {
     // 错误提示已由 request / ensureLogin 统一处理
@@ -275,6 +291,12 @@ onShow(() => {
   loadCategories();
 });
 
+/** 打开录入弹层。**写操作入口**：未登录先引导登录 */
+async function openAdd() {
+  if (!(await userStore.requireLogin('登录后才能添加衣物'))) return;
+  showAdd.value = true;
+}
+
 /** 录入成功：关弹层 + 刷新列表 */
 function onCreated() {
   showAdd.value = false;
@@ -285,6 +307,11 @@ function onCreated() {
 /** 返回上一页（通常是今日推荐首页） */
 function goBack() {
   uni.navigateBack();
+}
+
+/** 去登录页（游客态入口） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
 }
 
 /** 跳衣物详情 */

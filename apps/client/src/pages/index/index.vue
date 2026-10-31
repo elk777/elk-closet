@@ -94,6 +94,32 @@
       <SkeletonOutfit :count="2" />
     </template>
 
+    <!-- 游客态：未登录。不拦截浏览，而是介绍产品并给出登录入口（审核要求） -->
+    <view v-else-if="guest" class="guest">
+      <text class="guest__t">今天穿什么，交给知衣</text>
+      <text class="guest__s">
+        把衣物拍进手机，它会记住你的衣橱，按天气和场合每天搭一套。
+      </text>
+      <view class="guest__points">
+        <view class="guest__point">
+          <text class="guest__dot" />
+          <text class="guest__pt">拍照即录入，自动识别品类、颜色、材质</text>
+        </view>
+        <view class="guest__point">
+          <text class="guest__dot" />
+          <text class="guest__pt">按天气与场合生成每日搭配</text>
+        </view>
+        <view class="guest__point">
+          <text class="guest__dot" />
+          <text class="guest__pt">穿搭日历，回看每天都在穿什么</text>
+        </view>
+      </view>
+      <view class="guest__cta" @click="goLogin">
+        <text>微信登录，开始使用</text>
+      </view>
+      <text class="guest__note">只获取微信账号标识用于保存你的衣橱</text>
+    </view>
+
     <!-- 件数不足：解锁引导（PRD 4.9 冷启动钩子） -->
     <view v-else-if="rec?.status === 'locked'" class="unlock">
       <text class="unlock__t">
@@ -181,7 +207,7 @@
     </view>
 
     <!-- 悬浮添加按钮：首页直接录入，录入后件数变化可能解锁/刷新推荐（PRD 4.1 生命线） -->
-    <view class="fab" @click="showAdd = true">
+    <view class="fab" @click="openAdd">
       <AppIcon name="plus" :size="40" color="#fff" />
       <text class="fab__t">添加衣物</text>
     </view>
@@ -237,6 +263,13 @@ const loaded = ref(false);
 const cacheStale = ref(false);
 /** 录入弹层开关：首页直接添加衣物（PRD 首页录入入口） */
 const showAdd = ref(false);
+/**
+ * 游客态：未登录。
+ *
+ * 首页不拦人，推荐区改为产品介绍 + 登录引导——审核要求游客能先浏览。
+ * 与 loadError 区分：那是「登录了但没拉到」，这是「还没登录」。
+ */
+const guest = ref(false);
 const userStore = useUserStore();
 
 /** 衣柜名：登录后取用户自定义名，未就绪用默认名兜底 */
@@ -266,16 +299,21 @@ const rainText = computed(() => {
 
 /**
  * 拉取今日推荐。
- * 先幂等确保登录，再尝试取定位（失败静默降级，后端用兜底城市）。
- * 失败提示由请求器统一处理，这里额外标记 loadError 让页面出可重试的兜底态。
+ *
+ * 推荐完全依赖个人衣橱，未登录时无数据可拉——此时不请求，直接置为游客态，
+ * 由模板展示产品介绍与登录引导。读接口用 ensureLogin（静默查询、不跳转），
+ * 与写操作入口的 requireLogin 区分开。
  */
 async function load() {
   loading.value = true;
   loadError.value = false;
   try {
-    // 未登录时 ensureLogin 会跳登录页并返回 false：就此中止，
-    // 不要继续发请求（否则会白打一次 401 并闪出错误提示）
-    if (!(await userStore.ensureLogin())) return;
+    // 未登录：走游客态，不请求、不跳转（审核要求先能浏览）
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     const coords = await getCoords();
     rec.value = await getTodayRecommendation({
       lon: coords?.lon,
@@ -304,7 +342,11 @@ async function reload() {
   loading.value = true;
   loadError.value = false;
   try {
-    if (!(await userStore.ensureLogin())) return;
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     const coords = await getCoords();
     rec.value = await getTodayRecommendation({
       lon: coords?.lon,
@@ -364,9 +406,24 @@ function goSettings() {
   uni.navigateTo({ url: '/pages/settings/settings' });
 }
 
-/** 跳衣物详情 */
+/** 进衣物详情 */
 function goDetail(id: string) {
   uni.navigateTo({ url: `/pages/garment/detail?id=${id}` });
+}
+
+/**
+ * 打开录入弹层。**写操作入口**：未登录先引导登录。
+ *
+ * 这是「游客可浏览、产生数据才登录」的分界线——悬浮按钮是首页唯一写入点。
+ */
+async function openAdd() {
+  if (!(await userStore.requireLogin('登录后才能添加衣物'))) return;
+  showAdd.value = true;
+}
+
+/** 去登录页（游客态的主动入口，不做「去/先看看」二次询问） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
 }
 
 /**
@@ -374,7 +431,8 @@ function goDetail(id: string) {
  * 用户在打卡页仍可增减单品、补场合备注。
  * @param items 该套搭配的完整单品（取 id 传入）
  */
-function goCheckIn(items: { id: string }[]) {
+async function goCheckIn(items: { id: string }[]) {
+  if (!(await userStore.requireLogin('登录后才能打卡'))) return;
   const itemIds = items.map((i) => i.id).join(',');
   uni.navigateTo({
     url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
@@ -538,6 +596,72 @@ function goCheckIn(items: { id: string }[]) {
 .sec-title__link {
   font-size: 13px;
   color: $zy-ink-2;
+}
+/* 游客态：未登录时的产品介绍与登录引导，替代推荐区 */
+.guest {
+  margin-top: 28px;
+  padding: 24px 20px 22px;
+  background: $zy-surface;
+  border: 1px solid $zy-line;
+  border-radius: $zy-radius;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.guest__t {
+  font-size: 18px;
+  font-weight: 700;
+  color: $zy-ink;
+  line-height: 1.4;
+}
+.guest__s {
+  font-size: 13px;
+  line-height: 1.7;
+  color: $zy-ink-2;
+}
+.guest__points {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 4px;
+}
+.guest__point {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.guest__dot {
+  width: 5px;
+  height: 5px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: $zy-ink-3;
+  flex: 0 0 auto;
+}
+.guest__pt {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.6;
+  color: $zy-ink-2;
+}
+.guest__cta {
+  align-self: stretch;
+  margin-top: 12px;
+  height: 46px;
+  border-radius: $zy-radius-pill;
+  background: $zy-accent;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.guest__note {
+  align-self: center;
+  font-size: 11px;
+  color: $zy-ink-3;
 }
 .unlock {
   margin-top: 40px;

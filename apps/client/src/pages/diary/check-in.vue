@@ -198,6 +198,7 @@ function toggle(id: string) {
 
 /** 提交打卡：建记录 + 反哺穿着数，成功后回上一页 */
 async function submit() {
+  if (!(await userStore.requireLogin('登录后才能保存穿搭记录'))) return;
   if (!photoUrl.value) {
     useToast().info('先选一张打卡照');
     return;

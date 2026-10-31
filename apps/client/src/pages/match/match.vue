@@ -84,6 +84,15 @@
       <SkeletonOutfit :count="2" />
     </template>
 
+    <!-- 游客态：未登录。搭配完全基于个人衣橱，先引导登录 -->
+    <view v-else-if="guest" class="hint">
+      <text class="hint__t">登录后开始智能搭配</text>
+      <text class="hint__s">按天气、场合、风格，从你的衣橱里搭出一套</text>
+      <view class="hint__cta" @click="goLogin">
+        <text>微信登录</text>
+      </view>
+    </view>
+
     <!-- 整个衣橱件数不足：解锁引导 -->
     <view v-else-if="res?.status === 'locked'" class="hint">
       <text class="hint__t">
@@ -290,6 +299,8 @@ const seasonOptions = SEASONS;
 
 const res = ref<MatchedOutfits | null>(null);
 const loading = ref(true);
+/** 游客态：未登录。与 locked/thin（已登录但件数不足）区分 */
+const guest = ref(false);
 /**
  * 已有旧结果、正在取新结果。
  *
@@ -358,7 +369,12 @@ async function load(forceRefresh = false) {
     loading.value = true;
   }
   try {
-    if (!(await userStore.ensureLogin())) return;
+    // 未登录：走游客引导，不发请求
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     const data = await getMatchedOutfits({
       occasion: occasion.value || undefined,
       style: style.value || undefined,
@@ -411,6 +427,11 @@ function goAddGarment() {
   uni.navigateTo({ url: '/pages/closet/closet' });
 }
 
+/** 去登录页（游客态入口） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
+}
+
 /** 跳衣物详情 */
 function goDetail(id: string) {
   // 刷新中旧结果是「待替换」的临时内容，不该让用户点进去操作。
@@ -424,8 +445,10 @@ function goDetail(id: string) {
  * 打开弹层并发起试穿；后端若返回 no_body 则弹层切到「引导传全身照」。
  * @param items 该套搭配的完整单品
  */
-function onTryOn(items: { id: string }[]) {
+async function onTryOn(items: { id: string }[]) {
   if (refreshing.value) return; // 同 goDetail：刷新中不响应旧结果上的操作
+  // 试穿要写全身照与结果图，属个人数据操作：未登录先引导登录
+  if (!(await userStore.requireLogin('登录后才能试穿'))) return;
   tryOnItemIds.value = items.map((i) => i.id);
   tryOnVisible.value = true;
   runTryOn();
@@ -498,8 +521,9 @@ function saveTryOnAsCheckIn() {
  * 采纳这套去打卡：带入单品 id 与来源 ai，跳打卡页。
  * @param items 该套搭配的完整单品
  */
-function goCheckIn(items: { id: string }[]) {
+async function goCheckIn(items: { id: string }[]) {
   if (refreshing.value) return; // 同 goDetail：刷新中不响应旧结果上的操作
+  if (!(await userStore.requireLogin('登录后才能打卡'))) return;
   const itemIds = items.map((i) => i.id).join(',');
   uni.navigateTo({
     url: `/pages/diary/check-in?source=ai&itemIds=${itemIds}`,
@@ -543,11 +567,12 @@ function pickedTryOn() {
 }
 
 /** 手挑这套去打卡：带单品 id 与来源 manual 跳打卡页。 */
-function pickedCheckIn() {
+async function pickedCheckIn() {
   if (pickedIds.value.length === 0) {
     toast.info('先挑一件吧');
     return;
   }
+  if (!(await userStore.requireLogin('登录后才能打卡'))) return;
   pickerVisible.value = false;
   uni.navigateTo({
     url: `/pages/diary/check-in?source=manual&itemIds=${pickedIds.value.join(',')}`,

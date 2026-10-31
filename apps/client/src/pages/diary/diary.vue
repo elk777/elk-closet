@@ -20,6 +20,15 @@
       <AppLoading text="加载中…" />
     </view>
 
+    <!-- 游客态：未登录。穿搭日记是纯个人数据，不与「本月无记录」混淆 -->
+    <view v-else-if="guest" class="empty">
+      <text class="empty-t">登录后查看穿搭日记</text>
+      <text class="empty-s">每天的穿搭按账号保存，随手翻看过去的样子</text>
+      <view class="empty-cta" @click="goLogin">
+        <text>微信登录</text>
+      </view>
+    </view>
+
     <!-- 本月空态 -->
     <view v-else-if="outfits.length === 0" class="empty">
       <text class="empty-t">这个月还没有穿搭记录</text>
@@ -60,6 +69,8 @@ const month = ref(now.getMonth() + 1); // 1~12
 
 const outfits = ref<OutfitView[]>([]);
 const loading = ref(true);
+/** 游客态：未登录。与「本月无记录」区分 */
+const guest = ref(false);
 
 /** 是否停在当前月：当前月不允许再往后翻（未来没有记录） */
 const isCurrentMonth = computed(
@@ -79,7 +90,12 @@ function dayOf(wornOn: string): string {
 async function load() {
   loading.value = true;
   try {
-    if (!(await userStore.ensureLogin())) return;
+    // 未登录：走游客引导，不发请求
+    if (!(await userStore.ensureLogin())) {
+      guest.value = true;
+      return;
+    }
+    guest.value = false;
     outfits.value = await listOutfitsByMonth(year.value, month.value);
   } catch {
     // 提示已由 request / ensureLogin 统一处理
@@ -119,6 +135,11 @@ onShow(() => {
 /** 跳打卡详情（路径须与 pages.json 注册的 pages/diary/detail 一致） */
 function goDetail(id: string) {
   uni.navigateTo({ url: `/pages/diary/detail?id=${id}` });
+}
+
+/** 去登录页（游客态入口） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' });
 }
 </script>
 
