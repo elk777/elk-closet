@@ -54,9 +54,50 @@ export class UserService {
       });
       return existing;
     }
-    return this.prisma.user.create({
-      data: { ...identity, closetName: DEFAULT_CLOSET_NAME },
-    });
+    return this.createOrRecover(identity);
+  }
+
+  /**
+   * 建号，撞唯一约束时退化成「读已有记录」。
+   *
+   * 为什么需要这层：`findOrCreate` 是「先查后建」，不是原子操作。小程序启动时
+   * App.vue 的 onLaunch 与页面 onShow 都会调 ensureLogin，两者并发就会同时
+   * 走到 create，后到的那次撞 `wx_mini_openid` 唯一约束并抛 500——用户第一次
+   * 打开小程序就有概率看到一次报错。
+   *
+   * 不做成 upsert：身份是 OR 查询（unionid / 两端 openid 任一命中），upsert 只能
+   * 按单一唯一键，表达不了这个语义。这里用「建失败就再查一次」收口，普适且简单。
+   * @param identity 第三方身份标识
+   * @returns 本次建出的用户，或并发建号方刚建好的那条
+   */
+  private async createOrRecover(identity: Identity) {
+    try {
+      return await this.prisma.user.create({
+        data: { ...identity, closetName: DEFAULT_CLOSET_NAME },
+      });
+    } catch (err) {
+      // 只处理唯一约束冲突（P2002）；其它错误（连接失败等）照常抛出
+      if (!this.isUniqueViolation(err)) throw err;
+      const where = this.buildWhere(identity);
+      const existing = where
+        ? await this.prisma.user.findFirst({ where })
+        : null;
+      // 冲突了却查不到，说明不是本身份造成的，如实抛出，不吞
+      if (!existing) throw err;
+      return existing;
+    }
+  }
+
+  /**
+   * 判断是否为 Prisma 唯一约束冲突（P2002）。
+   * @param err 捕获到的异常
+   */
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: string }).code === 'P2002'
+    );
   }
 
   /**
