@@ -9,6 +9,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { User } from '../prisma/client';
 import { UpdateClosetNameDto } from './dto/update-closet-name.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserService } from './user.service';
 
 @Controller('user')
@@ -25,5 +26,16 @@ export class UserController {
   @Post('closet-name')
   updateClosetName(@CurrentUser() user: User, @Body() dto: UpdateClosetNameDto) {
     return this.users.updateClosetName(user.id, dto.closetName);
+  }
+
+  /**
+   * 修改个人资料（设置页顶部的头像 / 昵称）。
+   * @param user 当前登录用户
+   * @param dto 昵称 / 头像，均可选，只改传入的字段
+   * @returns 更新后的用户（前端据此刷新 store）
+   */
+  @Post('profile')
+  updateProfile(@CurrentUser() user: User, @Body() dto: UpdateProfileDto) {
+    return this.users.updateProfile(user.id, dto);
   }
 }

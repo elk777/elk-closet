@@ -6,8 +6,10 @@
  * 保证同一身份稳定映射到同一 user，衣物从第一件起就挂在账号上。
  */
 
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DEFAULT_CLOSET_NAME } from '@zhiyi/shared';
+import type { UpyunConfig } from '../config/configuration';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** 可用于定位用户的第三方身份（互斥其一） */
@@ -19,7 +21,10 @@ interface Identity {
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   /**
    * 按第三方身份找用户，不存在则建号。
@@ -35,15 +40,51 @@ export class UserService {
       ? await this.prisma.user.findFirst({ where })
       : null;
     if (existing) {
-      // 更新活跃时间用于留存分析，不阻塞主流程
+      // 更新活跃时间用于留存分析，不阻塞主流程；
+      // 顺带回填本次才拿到的身份：首次登录可能还没有 unionid（需开放平台绑定），
+      // 后来有了就该补上，否则将来 App 端接入时会把同一人认成两个账号。
       await this.prisma.user.update({
         where: { id: existing.id },
-        data: { lastActiveAt: new Date() },
+        data: {
+          lastActiveAt: new Date(),
+          ...(identity.unionid && !existing.unionid
+            ? { unionid: identity.unionid }
+            : {}),
+        },
       });
       return existing;
     }
     return this.prisma.user.create({
       data: { ...identity, closetName: DEFAULT_CLOSET_NAME },
+    });
+  }
+
+  /**
+   * 修改个人资料（设置页）：昵称 / 头像，只写传入的字段。
+   *
+   * 头像做归属校验：必须落在本人又拍云目录 `<uploadDir>/<userId>/avatars/` 下。
+   * 不校验的话用户可以填任意 URL 当头像——既是越权引用，也让前台加载不可控的
+   * 外部资源。URL 前缀而非精确 key 匹配，是因为 CDN 域名可能带查询串/不同协议头。
+   * @param id 用户内部主键
+   * @param dto 昵称 / 头像（均可选）
+   * @returns 更新后的用户
+   */
+  async updateProfile(
+    id: string,
+    dto: { nickname?: string; avatarUrl?: string },
+  ) {
+    if (dto.avatarUrl) {
+      const { uploadDir, domain } = this.config.get<UpyunConfig>('upyun')!;
+      if (!this.isOwnAvatar(dto.avatarUrl, domain, uploadDir, id)) {
+        throw new BadRequestException('头像地址不属于当前用户');
+      }
+    }
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        ...(dto.nickname !== undefined ? { nickname: dto.nickname } : {}),
+        ...(dto.avatarUrl !== undefined ? { avatarUrl: dto.avatarUrl } : {}),
+      },
     });
   }
 
@@ -67,6 +108,36 @@ export class UserService {
   ): Promise<{ closetName: string }> {
     await this.prisma.user.update({ where: { id }, data: { closetName } });
     return { closetName };
+  }
+
+  /**
+   * 判断头像 URL 是否属于该用户的又拍云目录。
+   *
+   * 必须解析 URL 后比较 host 与 pathname，而不是 `includes()`：
+   * 后者可被 `https://evil.com/?/garments/<id>/avatars/x.png` 这类构造绕过，
+   * 把别人域名下的图当好头像存下来。
+   * @param url 待校验的头像地址
+   * @param domain 又拍云 CDN 域名（配置值）
+   * @param uploadDir 上传根目录名
+   * @param userId 当前用户主键
+   * @returns 是否为本人头像目录下的地址
+   */
+  private isOwnAvatar(
+    url: string,
+    domain: string,
+    uploadDir: string,
+    userId: string,
+  ): boolean {
+    let parsed: URL;
+    let expectedHost: string;
+    try {
+      parsed = new URL(url);
+      expectedHost = new URL(domain).host;
+    } catch {
+      return false;
+    }
+    if (parsed.host !== expectedHost) return false;
+    return parsed.pathname.startsWith(`/${uploadDir}/${userId}/avatars/`);
   }
 
   /** 把身份标识拼成 Prisma 的 OR 查询条件 */
