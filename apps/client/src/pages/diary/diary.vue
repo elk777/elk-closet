@@ -79,7 +79,7 @@ function dayOf(wornOn: string): string {
 async function load() {
   loading.value = true;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     outfits.value = await listOutfitsByMonth(year.value, month.value);
   } catch {
     // 提示已由 request / ensureLogin 统一处理

@@ -106,7 +106,7 @@ const sourceText = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     outfit.value = await detailOutfit(outfitId);
   } catch {
     // 提示已由 request / ensureLogin 统一处理

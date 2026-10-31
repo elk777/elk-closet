@@ -125,7 +125,7 @@ function pct(ratio: number): string {
 async function load() {
   loading.value = true;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     garments.value = await listGarments();
   } catch {
     // 错误提示已由 request / ensureLogin 统一处理

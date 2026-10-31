@@ -60,7 +60,9 @@ function request<T>(opts: FullOptions): Promise<T> {
           resolve(body.data);
           return;
         }
-        // 401 只清 token，不跳登录页：下次请求/进入页面时由 ensureLogin 静默续登
+        // 401 只清 token，不做跳转：跳转统一由 store 的 ensureLogin 负责。
+        // 请求器不知道当前页面是否可离开，贸然 reLaunch 会打断用户正在做的事；
+        // 下一次进入页面时 ensureLogin 会拦到「无 token」并导向登录页。
         if (res.statusCode === 401) {
           clearToken();
         }

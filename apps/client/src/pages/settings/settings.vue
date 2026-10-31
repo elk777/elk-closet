@@ -168,7 +168,8 @@ const bodyPhotoUrl = computed(() => userStore.user?.bodyPhotoUrl ?? null);
 
 // onShow 而非 onMounted：从搭配页上传全身照后返回，此页需反映最新状态
 onShow(async () => {
-  await userStore.ensureLogin();
+  // 未登录会跳登录页并返回 false：就此中止，不带着空用户渲染设置项
+  if (!(await userStore.ensureLogin())) return;
   closetNameDraft.value = userStore.user?.closetName ?? '';
   nicknameDraft.value = userStore.user?.nickname ?? '';
   try {
@@ -243,21 +244,17 @@ async function saveNickname() {
 }
 
 /**
- * 退出登录：确认后清登录态并回首页。
- *
- * 用 reLaunch 而非 navigateBack：用户可能从任意页面进入设置页，
- * 回首页最干净，且首页 onShow 会重新触发 ensureLogin。
+ * 退出登录：确认后清登录态并回登录页（store.logout 内部已 reLaunch）。
  */
 function confirmLogout() {
   uni.showModal({
     title: '退出登录',
-    content: '退出后需要重新进入小程序才能继续使用',
+    content: '退出后需要重新登录才能继续使用',
     confirmText: '退出',
     confirmColor: '#c0392b',
     success: (res) => {
       if (!res.confirm) return;
       userStore.logout();
-      uni.reLaunch({ url: '/pages/index/index' });
     },
   });
 }

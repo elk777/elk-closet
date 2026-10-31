@@ -2,9 +2,11 @@
 /**
  * 应用根组件。
  *
- * onLaunch 里静默登录：小程序端走微信 uni.login（用户无感），H5 端走 dev-login。
- * 拿到 token 后，后续所有受保护接口才不会 401。
- * 登录失败不白屏——弹可重试提示，用户仍可停留，下次进入页面会再触发 ensureLogin（幂等）。
+ * **不再在 onLaunch 里登录**：小程序审核要求用户主动授权，自动静默建号会被
+ * 判定为未经授权收集信息。登录入口改为 pages/login/login.vue 上的按钮，
+ * 由首页 onShow 里的 ensureLogin() 拦截跳转。
+ *
+ * onLaunch 只做「已登录时才预热」：无 token 预热必 401，且用户可能还没同意登录。
  * 入口文件用相对路径（@ 别名在入口阶段不稳定）。
  */
 import { onLaunch } from '@dcloudio/uni-app';
@@ -12,28 +14,18 @@ import { useUserStore } from './store/user';
 import { prewarmTodayRecommendation } from './api/recommend.api';
 
 /**
- * 登录后静默预热今日推荐。
+ * 已登录时静默预热今日推荐。
  *
  * 今日推荐冷启动要等 AI 生成（实测 9~49s），而同一时段内结果对同一用户基本确定。
- * 启动时提前算好，用户稍后进首页即可命中缓存。
+ * 提前算好，用户稍后进首页即可命中缓存。
  *
  * fire-and-forget：await 会把启动挂住，比冷启动更糟。
- * 静默：用户可能根本不进首页，预热失败与他无关。不传 forceRefresh——已生成的
- * 推荐不该被覆盖。
- *
- * 并发安全由 prewarmTodayRecommendation 内部保证：它与首页 load() 共用同一个
- * in-flight 请求，冷启动时首页 onShow 与预热同时发起也只会真正调一次 AI。
+ * 未登录不预热：既必然 401，也违背「用户授权前不采集」的原则。
  */
-onLaunch(async () => {
+onLaunch(() => {
   const user = useUserStore();
-  try {
-    await user.ensureLogin();
-  } catch {
-    // 登录失败不阻断：给一次重试机会，页面进入时会再幂等触发
-    uni.showToast({ title: '登录失败，请检查网络后重试', icon: 'none' });
-    return;
-  }
-  // 无 token 预热必 401，故放在登录成功之后；不 await，让预热与用户操作并行
+  // 仅判断本地是否有登录态；真实有效性交给首页 ensureLogin 校验
+  if (!user.token) return;
   void prewarmTodayRecommendation();
 });
 </script>

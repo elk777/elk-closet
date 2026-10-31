@@ -273,7 +273,9 @@ async function load() {
   loading.value = true;
   loadError.value = false;
   try {
-    await userStore.ensureLogin();
+    // 未登录时 ensureLogin 会跳登录页并返回 false：就此中止，
+    // 不要继续发请求（否则会白打一次 401 并闪出错误提示）
+    if (!(await userStore.ensureLogin())) return;
     const coords = await getCoords();
     rec.value = await getTodayRecommendation({
       lon: coords?.lon,
@@ -302,7 +304,7 @@ async function reload() {
   loading.value = true;
   loadError.value = false;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     const coords = await getCoords();
     rec.value = await getTodayRecommendation({
       lon: coords?.lon,

@@ -358,7 +358,7 @@ async function load(forceRefresh = false) {
     loading.value = true;
   }
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     const data = await getMatchedOutfits({
       occasion: occasion.value || undefined,
       style: style.value || undefined,
@@ -515,7 +515,7 @@ async function openPicker() {
   if (allGarments.value.length || loadingGarments.value) return;
   loadingGarments.value = true;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     allGarments.value = await listGarments();
   } catch {
     // 提示已由 request / ensureLogin 统一处理

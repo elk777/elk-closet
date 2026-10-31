@@ -155,7 +155,7 @@ onLoad((query) => {
 async function loadGarments() {
   loadingGarments.value = true;
   try {
-    await userStore.ensureLogin();
+    if (!(await userStore.ensureLogin())) return;
     garments.value = await listGarments();
   } catch {
     // 提示已由请求器统一处理
