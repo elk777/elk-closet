@@ -7,12 +7,12 @@
       <!-- 左：品牌区，logo + 衣柜名 + 副标题，竖排跨两行高并垂直居中 -->
       <view class="brand">
         <view class="logo">
-          <image class="logo__img" src="/static/logo-badge.png" mode="aspectFit" />
+          <image class="logo__img" src="/static/logo-badge-new.png" mode="aspectFit" />
         </view>
         <view class="brand__text">
           <text class="name">{{ closetName }}</text>
           <text v-if="garmentCount != null" class="brand__tip">
-            {{ garmentCount }} 件 · 点击管理
+            {{ garmentCount }} 件
           </text>
         </view>
       </view>
@@ -398,12 +398,17 @@ function goCheckIn(items: { id: string }[]) {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* 占满右列之外的剩余宽度并允许收缩：衣柜名最长 16 字，不限定宽度会顶到图标区 */
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .brand__text {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 .toprail {
   /* 右列竖排：胶囊等高占位块在上，图标工具栏在下 */
@@ -421,10 +426,10 @@ function goCheckIn(items: { id: string }[]) {
   margin-top: 2px;
 }
 .logo {
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
-  background: $zy-accent;
+  // background: $zy-accent;
   /* 图片自带透明留白，无需内边距；底板与圆角交给 CSS，避免与图片里的圆角叠加 */
   overflow: hidden;
 }
@@ -434,11 +439,15 @@ function goCheckIn(items: { id: string }[]) {
   display: block;
 }
 .name {
+  /* 单行，超长用省略号：衣柜名上限 16 字，375 屏宽下一定放不下，必须截断而非溢出压住右侧图标。
+     line-height 显式给出，否则小程序里 overflow:hidden 会把文字上半截裁掉 */
   font-size: 18px;
+  line-height: 1.3;
   font-weight: 700;
   color: $zy-ink;
-  /* 单行不换行，避免被压窄时「我的衣橱」折成两行 */
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tools {
   /* 落在胶囊占位块正下方那一行；留一点上间距与胶囊分隔。
