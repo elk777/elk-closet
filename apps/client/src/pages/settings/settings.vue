@@ -471,7 +471,13 @@ function confirmRemoveBodyPhoto() {
   opacity: 0.6;
 }
 .btn--wide {
-  width: 100%;
+  /* 覆盖 .btn 的 flex:0 0 auto：默认按内容宽度排布，撑不满容器。
+     box-sizing 必须显式给：项目没有全局 border-box，
+     否则 width:100% 会额外加上左右 padding 导致溢出。 */
+  flex: 0 0 auto;
+  align-self: stretch;
+  box-sizing: border-box;
+  width: auto;
   margin-top: 4px;
   text-align: center;
 }
