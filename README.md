@@ -49,7 +49,7 @@
 
 产品是一棵树 🌳 ——**衣橱是主干**，今日推荐、AI 试穿、穿搭日记、衣橱看板都是让主干长茂盛的枝叶，而不是三五个并列堆砌的功能。它刻意不做社交、不做 UGC、不做穿搭社区。
 
-完整的产品构思、信息架构与用户旅程见 📖 [`docs/PRD.md`](docs/PRD.md)。
+完整的产品构思、信息架构与用户旅程见上方「这是什么」与「功能特性」两节。
 
 **技术上值得一看的地方：**
 
@@ -176,9 +176,6 @@ elk-closet/
 │           └── health/          # 健康检查
 ├── 🧬 packages/
 │   └── shared/                  # @zhiyi/shared：枚举 / 领域类型 / AI 契约 / 响应信封
-├── 📖 docs/
-│   ├── PRD.md                   # 产品需求文档（构思、架构、用户旅程）
-│   └── demo.html                # 交互原型
 ├── 🐳 docker-compose.yml        # 本地依赖：postgres + redis
 ├── pnpm-workspace.yaml
 └── tsconfig.base.json
