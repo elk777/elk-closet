@@ -276,6 +276,9 @@ async function loadGarments() {
  * 返回衣橱时 onShow 自动回源，chip 与用户分类保持一致。
  */
 async function loadCategories() {
+  // 分类是用户级数据：未登录不发请求（否则必然 401 并闪错误提示）。
+  // 用 ensureLogin 而非只看 token——token 可能已失效。
+  if (!(await userStore.ensureLogin())) return;
   const list = await fetchCategoriesCached();
   clothingCategories.value = list
     .filter((c) => c.majorType === '服装')
