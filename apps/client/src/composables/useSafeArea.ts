@@ -24,6 +24,8 @@ export function useSafeArea() {
   const menuHeight = ref(32);
 
   const info = uni.getWindowInfo();
+  // H5 的 getWindowInfo 只保证 windowWidth/Height 可靠，statusBarHeight 可能缺失；
+  // 浏览器没有系统状态栏，缺省 0 即「不留顶部占位」，符合预期
   statusBarHeight.value = info.statusBarHeight ?? 0;
   menuTop.value = statusBarHeight.value;
 
