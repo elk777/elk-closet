@@ -130,6 +130,46 @@ export class UserService {
   }
 
   /**
+   * 按邮箱查找用户，不存在则建号（H5 邮箱验证码登录）。
+   *
+   * 与 findOrCreate（第三方身份）并列而非合并：邮箱是独立的身份维度，
+   * 混进同一个 OR 查询会让「邮箱用户」与「微信用户」的建号语义纠缠——
+   * 例如同一人先微信登录后有邮箱，是合并还是新建？这个决策不该藏在
+   * 一个 OR 里。将来做账号绑定时，绑定是一次显式的数据迁移，不是查询。
+   * @param email 已验证归属的邮箱（调用前须已过验证码校验）
+   * @returns 已存在或新建的用户
+   */
+  async findOrCreateByEmail(email: string) {
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      await this.prisma.user.update({
+        where: { id: existing.id },
+        data: { lastActiveAt: new Date() },
+      });
+      return existing;
+    }
+
+    try {
+      return await this.prisma.user.create({
+        data: {
+          email,
+          // 走到这里说明刚通过验证码校验，邮箱归属已证明
+          emailVerifiedAt: new Date(),
+          closetName: DEFAULT_CLOSET_NAME,
+        },
+      });
+    } catch (err) {
+      // 并发建号撞 email 唯一约束：退回读取对方刚建好的那条。
+      // 与 createOrRecover 同一套路——findOrCreate 是「先查后建」非原子操作，
+      // 用户连点两次登录就会撞上。
+      if (!this.isUniqueViolation(err)) throw err;
+      const recovered = await this.prisma.user.findUnique({ where: { email } });
+      if (!recovered) throw err;
+      return recovered;
+    }
+  }
+
+  /**
    * 按内部主键查用户，供 JwtAuthGuard 校验 token 主体仍存在。
    * @param id 用户内部主键
    */

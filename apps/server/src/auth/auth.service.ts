@@ -156,6 +156,20 @@ export class AuthService implements OnModuleInit {
     }
   }
 
+  /**
+   * 邮箱验证码登录（H5 端）。
+   *
+   * 验证码校验由 EmailCodeService 完成，这里只负责「验证通过后建号发票」。
+   * 拆开的理由：验证码的生成、限流、消费是独立的一整套状态机，
+   * 塞进 AuthService 会让本类同时管「身份」和「临时凭证」两件事。
+   * @param email 已验证归属的邮箱
+   * @returns token 与用户（与微信登录同一返回结构，前端无需分支处理）
+   */
+  async emailLogin(email: string) {
+    const user = await this.users.findOrCreateByEmail(email);
+    return this.buildAuthResult(user);
+  }
+
   /** 用用户主键签发 JWT（secret / 有效期已在 JwtModule 注册时配好） */
   private buildAuthResult(user: User) {
     const payload: JwtPayload = { sub: user.id };

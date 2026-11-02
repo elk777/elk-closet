@@ -2,6 +2,12 @@
  * 认证模块。
  *
  * JwtModule 全局注册（secret 从配置读），导出 JwtAuthGuard 供各业务模块保护路由。
+ *
+ * 三种登录方式并存：
+ * - dev-login：开发/联调（生产禁用）
+ * - wx-login：微信小程序静默登录
+ * - email/send-code + email/verify：H5 邮箱验证码登录
+ * 三者最终都走 AuthService.buildAuthResult 签发同构 JWT，前端无需按来源分支处理。
  */
 
 import { Module } from '@nestjs/common';
@@ -11,7 +17,9 @@ import type { JwtConfig } from '../config/configuration';
 import { UserModule } from '../user/user.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { EmailCodeService } from './email-code.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { MailService } from './mail.service';
 
 @Module({
   imports: [
@@ -32,7 +40,7 @@ import { JwtAuthGuard } from './jwt-auth.guard';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard, MailService, EmailCodeService],
   // 一并导出 UserModule：JwtAuthGuard 依赖 UserService，
   // 其他模块引入 AuthModule 用 guard 时才能解析到该依赖
   exports: [JwtAuthGuard, JwtModule, UserModule],
