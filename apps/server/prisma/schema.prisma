@@ -33,6 +33,12 @@ model User {
   wxMiniOpenid String? @unique @map("wx_mini_openid")
   /// App 端 openid
   wxAppOpenid  String? @unique @map("wx_app_openid")
+  /// 邮箱：H5 端的真身份。
+  /// 可空是必须的——存量小程序用户全由 openid 建号，没有邮箱，
+  /// 设成必填会让迁移直接失败。非空时唯一，同一邮箱只能对应一个账号。
+  email     String?  @unique
+  /// 邮箱验证通过时间；非 null 表示该邮箱已证明归属（走了验证码）
+  emailVerifiedAt DateTime? @map("email_verified_at")
   /// 昵称：用户主动授权后才有
   nickname  String?
   /// 头像 URL：用户主动授权后才有
