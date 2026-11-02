@@ -3,14 +3,21 @@
     <!-- 游客态：设置页全是账号级数据，未登录时只给登录入口 -->
     <view v-if="guest" class="panel panel--guest">
       <text class="panel__title">还没登录</text>
-      <text class="hint">衣柜名、分类、试穿全身照都归属你的微信账号，登录后才能设置。</text>
+      <text class="hint">衣柜名、分类、试穿全身照都归属你的账号，登录后才能设置。</text>
       <view class="btn btn--wide" @click="goLogin">
+        <!-- #ifdef MP-WEIXIN -->
         <text>微信登录</text>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
+        <text>邮箱登录</text>
+        <!-- #endif -->
       </view>
     </view>
 
     <template v-else>
-    <!-- 个人资料：小程序端可设，H5 端无微信能力，显示降级文案 -->
+    <!-- 个人资料：两端都能设，取图方式不同——
+           小程序用 chooseAvatar（微信官方推荐，无授权弹窗），
+           H5 用普通选图后上传。 -->
     <view class="panel">
       <text class="panel__title">个人资料</text>
       <!-- #ifdef MP-WEIXIN -->
@@ -37,7 +44,25 @@
       </view>
       <!-- #endif -->
       <!-- #ifndef MP-WEIXIN -->
-      <text class="hint">仅小程序端可设置头像与昵称。</text>
+      <view class="profile">
+        <view class="avatar-btn" @click="onChooseAvatarH5">
+          <image v-if="avatarUrl" class="avatar-btn__img" :src="avatarUrl" mode="aspectFill" />
+          <view v-else class="avatar-btn__ph">
+            <text>{{ nicknameInitial }}</text>
+          </view>
+        </view>
+        <view class="profile__meta">
+          <input
+            v-model="nicknameDraft"
+            class="profile__nick"
+            type="text"
+            :maxlength="20"
+            placeholder="衣橱主人"
+            @blur="saveNickname"
+          />
+          <text class="hint">点击左侧头像可更换，只在设置页可见。</text>
+        </view>
+      </view>
       <!-- #endif -->
     </view>
 
@@ -219,16 +244,28 @@ async function saveName() {
 }
 
 /**
- * 选头像：微信选完给的是临时路径，需先传又拍云再落库。
+ * H5 端更换头像：先用 uni.chooseImage 选图，再走与小程序相同的上传流程。
+ *
+ * 与 onChooseAvatar 的区别仅在取图入口：chooseAvatar 是微信专有按钮，
+ * 它的返回本身就是临时路径，与 chooseImage 的第一项等价。后续上传、
+ * 落库、更新 store 三步完全复用，故抽成 applyAvatar 共用。
+ */
+async function onChooseAvatarH5() {
+  if (savingAvatar.value) return;
+  const files = await pickOneImage();
+  if (!files) return;
+  await applyAvatar(files);
+}
+
+/**
+ * 把本地临时路径传又拍云并落库。
  *
  * 头像选了就存（一步操作），不像昵称要失焦——用户选完图本身就是明确意图。
  * 上传失败给 toast，不改本地状态，避免界面显示一张实际没存上的头像。
+ * @param localPath 本地临时路径
  */
-async function onChooseAvatar(e: { detail: { avatarUrl: string } }) {
+async function applyAvatar(localPath: string) {
   if (savingAvatar.value) return;
-  const localPath = e.detail?.avatarUrl;
-  if (!localPath) return;
-
   savingAvatar.value = true;
   try {
     const uploaded = await uploadOne(localPath, 'avatars');
@@ -240,6 +277,35 @@ async function onChooseAvatar(e: { detail: { avatarUrl: string } }) {
   } finally {
     savingAvatar.value = false;
   }
+}
+
+/**
+ * 选一张图（H5 专用），返回本地临时路径。
+ * @returns 用户取消或失败时返回 null
+ */
+function pickOneImage(): Promise<string | null> {
+  return new Promise((resolve) => {
+    uni.chooseImage({
+      count: 1,
+      sourceType: ['album', 'camera'],
+      success: (res) => {
+        const paths = (res.tempFilePaths as string[]) ?? [];
+        resolve(paths[0] ?? null);
+      },
+      fail: () => resolve(null),
+    });
+  });
+}
+
+/**
+ * 选头像（小程序）：微信选完给的是临时路径，需先传又拍云再落库。
+ * @param e chooseAvatar 事件对象
+ */
+async function onChooseAvatar(e: { detail: { avatarUrl: string } }) {
+  if (savingAvatar.value) return;
+  const localPath = e.detail?.avatarUrl;
+  if (!localPath) return;
+  await applyAvatar(localPath);
 }
 
 /**

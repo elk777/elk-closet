@@ -16,7 +16,15 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { User } from '@zhiyi/shared';
-import { devLogin, fetchMe, wxLogin, type LoginResult } from '../api/auth.api';
+import {
+  devLogin,
+  // #ifndef MP-WEIXIN
+  emailLogin as emailLoginApi,
+  // #endif
+  fetchMe,
+  wxLogin,
+  type LoginResult,
+} from '../api/auth.api';
 import { getToken, setToken, clearToken } from '../utils/auth-storage';
 
 /** 登录页路径：需要授权时的出口 */
@@ -34,6 +42,9 @@ export const useUserStore = defineStore('user', () => {
    *
    * 用条件编译而非运行时判断：H5 构建产物里不带 wxLogin，避免打包多余的
    * 微信分支；反之小程序产物里也没有 devLogin 调用。
+   *
+   * H5 端不走本方法——邮箱登录需要用户先输入邮箱和验证码，是两步交互，
+   * 由登录页直接调 loginByEmail。
    */
   async function login(): Promise<void> {
     let res: LoginResult;
@@ -48,6 +59,23 @@ export const useUserStore = defineStore('user', () => {
     setToken(res.token);
     user.value = res.user;
   }
+
+  // #ifndef MP-WEIXIN
+  /**
+   * 邮箱验证码登录（H5 端）。
+   *
+   * 与 login() 并列而非合并：邮箱登录的验证码获取与校验是两步、跨请求的
+   * 交互，硬塞进单次调用的 login() 会把 UI 状态泄进 store。
+   * @param email 邮箱
+   * @param code 6 位验证码
+   */
+  async function loginByEmail(email: string, code: string): Promise<void> {
+    const res = await emailLoginApi(email, code);
+    token.value = res.token;
+    setToken(res.token);
+    user.value = res.user;
+  }
+  // #endif
 
   /**
    * 校验登录态，**不跳转、不建号**。
@@ -100,7 +128,18 @@ export const useUserStore = defineStore('user', () => {
     uni.reLaunch({ url: LOGIN_PAGE });
   }
 
-  return { user, token, isLoggedIn, login, ensureLogin, requireLogin, logout };
+  return {
+    user,
+    token,
+    isLoggedIn,
+    login,
+    // #ifndef MP-WEIXIN
+    loginByEmail,
+    // #endif
+    ensureLogin,
+    requireLogin,
+    logout,
+  };
 });
 
 /**

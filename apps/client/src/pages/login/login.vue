@@ -12,7 +12,12 @@
     <view class="pitch">
       <view class="pitch__item">
         <text class="pitch__dot" />
+        <!-- #ifdef MP-WEIXIN -->
         <text class="pitch__text">衣物、穿搭记录都归属你的微信账号</text>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
+        <text class="pitch__text">衣物、穿搭记录都归属你的邮箱账号</text>
+        <!-- #endif -->
       </view>
       <view class="pitch__item">
         <text class="pitch__dot" />
@@ -20,16 +25,65 @@
       </view>
       <view class="pitch__item">
         <text class="pitch__dot" />
+        <!-- #ifdef MP-WEIXIN -->
         <text class="pitch__text">仅获取微信身份用于识别账号，不读取昵称头像</text>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
+        <text class="pitch__text">只需邮箱验证码，不记录密码</text>
+        <!-- #endif -->
       </view>
     </view>
 
     <!-- 唯一登录入口。用户必须主动点击才会调 uni.login——
          这是审核要求的「用户授权」动作，不能自动触发。 -->
     <view class="actions">
+      <!-- #ifdef MP-WEIXIN -->
       <view class="btn" :class="{ 'btn--busy': loggingIn }" @click="onLogin">
         <text>{{ loggingIn ? '正在登录…' : '微信一键登录' }}</text>
       </view>
+      <!-- #endif -->
+
+      <!-- H5：邮箱验证码登录。两步交互（发码 → 验码），故与小程序分支结构不同 -->
+      <!-- #ifndef MP-WEIXIN -->
+      <view class="mailform">
+        <input
+          v-model="email"
+          class="mailform__input"
+          type="text"
+          :disabled="verifying"
+          placeholder="输入邮箱"
+          @blur="onEmailBlur"
+        />
+        <view class="mailform__row">
+          <input
+            v-model="code"
+            class="mailform__input mailform__input--code"
+            type="number"
+            maxlength="6"
+            :disabled="verifying"
+            placeholder="6 位验证码"
+          />
+          <view
+            class="mailform__send"
+            :class="{ 'mailform__send--dis': countdown > 0 || sending }"
+            @click="onSendCode"
+          >
+            <text>{{
+              sending ? '发送中…' : countdown > 0 ? `${countdown}s` : '获取验证码'
+            }}</text>
+          </view>
+        </view>
+        <view
+          class="btn"
+          :class="{ 'btn--busy': verifying }"
+          @click="onEmailLogin"
+        >
+          <text>{{ verifying ? '正在登录…' : '登录 / 注册' }}</text>
+        </view>
+        <text class="mailform__hint">首次登录自动创建账号</text>
+      </view>
+      <!-- #endif -->
+
       <text class="agree">
         登录即表示同意
         <text class="agree__link" @click="showTerms">《用户协议》</text>
@@ -54,12 +108,34 @@
  * - 只有一个主按钮，不做手机号/密码等其它登录方式
  */
 import { ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onShow, onUnload } from '@dcloudio/uni-app';
+// #ifndef MP-WEIXIN
+import { sendEmailCode } from '../../api/auth.api';
+// #endif
 import { useUserStore } from '../../store/user';
 
 const userStore = useUserStore();
 /** 登录中：防连点重复调 uni.login（code 一次性，重复调用会浪费并发） */
 const loggingIn = ref(false);
+
+// ── H5 邮箱登录状态（整段用条件编译包裹，小程序包里不留这些符号）──
+// #ifndef MP-WEIXIN
+/** 输入的邮箱 */
+const email = ref('');
+/** 输入的验证码 */
+const code = ref('');
+/** 发码请求进行中 */
+const sending = ref(false);
+/** 登录请求进行中 */
+const verifying = ref(false);
+/** 发码冷却剩余秒数，>0 时按钮禁用并显示倒计时 */
+const countdown = ref(0);
+/** 倒计时定时器句柄，页面卸载时清理，避免切走后仍在跑 */
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+
+/** 邮箱格式的宽松校验：只挡明显错误的输入，最终以后端 IsEmail 为准 */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// #endif
 
 /**
  * 已登录时不应停留在登录页：直接放行到首页。
@@ -73,8 +149,84 @@ onShow(() => {
   }
 });
 
+// #ifndef MP-WEIXIN
+/** 页面卸载时清掉倒计时，防止定时器泄漏 */
+onUnload(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+});
+
+/** 输入框失焦时统一去空白并转小写，与后端归一化规则保持一致 */
+function onEmailBlur() {
+  email.value = email.value.trim().toLowerCase();
+}
+
+/** 启动 60 秒倒计时（与后端 EMAIL_COOLDOWN_SECONDS 对齐） */
+function startCountdown(seconds: number) {
+  countdown.value = seconds;
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => {
+    countdown.value -= 1;
+    if (countdown.value <= 0 && countdownTimer) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  }, 1000);
+}
+
 /**
- * 用户点击登录。这是唯一的登录触发点。
+ * 获取验证码。
+ *
+ * 本地先校验邮箱格式再发请求：明显错误的输入不必往返一次后端，
+ * 也能避免每天限流额度被自己的手误消耗掉。
+ */
+async function onSendCode() {
+  if (sending.value || countdown.value > 0) return;
+  const addr = email.value.trim().toLowerCase();
+  if (!EMAIL_RE.test(addr)) {
+    uni.showToast({ title: '请输入正确的邮箱', icon: 'none' });
+    return;
+  }
+  sending.value = true;
+  try {
+    await sendEmailCode(addr);
+    startCountdown(60);
+    uni.showToast({ title: '验证码已发送', icon: 'none' });
+  } catch {
+    // 请求器已按后端 message 弹出提示（限流/未启用等），此处不重复
+  } finally {
+    sending.value = false;
+  }
+}
+
+/** H5 邮箱验证码登录 */
+async function onEmailLogin() {
+  if (verifying.value) return;
+  const addr = email.value.trim().toLowerCase();
+  if (!EMAIL_RE.test(addr)) {
+    uni.showToast({ title: '请输入正确的邮箱', icon: 'none' });
+    return;
+  }
+  if (!/^\d{6}$/.test(code.value)) {
+    uni.showToast({ title: '请输入 6 位验证码', icon: 'none' });
+    return;
+  }
+  verifying.value = true;
+  try {
+    await userStore.loginByEmail(addr, code.value);
+    uni.reLaunch({ url: '/pages/index/index' });
+  } catch {
+    // 同 onSendCode：错误提示由请求器统一处理
+  } finally {
+    verifying.value = false;
+  }
+}
+// #endif
+
+/**
+ * 用户点击登录（微信）。这是小程序端唯一的登录触发点。
  */
 async function onLogin() {
   if (loggingIn.value) return;
@@ -100,12 +252,28 @@ function showTerms() {
   });
 }
 
-/** 隐私政策：说明收集范围，与登录文案一致 */
+/**
+ * 隐私政策：说明收集范围，与登录文案一致。
+ *
+ * 内容按平台分支：小程序只拿 openid，H5 只拿邮箱，两者的「收集了什么」
+ * 完全不同，混写成一句会误导用户。
+ */
 function showPrivacy() {
+  // 先落到变量再赋给 content：直接在对象字面量里写两个 content
+  // 会被 vue-tsc 判为重复属性（它不处理条件编译注释）
+  let content = '';
+  // #ifdef MP-WEIXIN
+  content =
+    '登录时仅获取微信账号标识（openid）用于识别你的账号；不读取昵称、头像、通讯录等其它信息。昵称与头像可在设置页自行选填。衣物照片仅用于识别与展示，不会对外公开。';
+  // #endif
+  // #ifndef MP-WEIXIN
+  content =
+    '登录时仅通过邮箱验证码确认账号归属，不记录密码；邮箱仅用于登录与找回账号。昵称与头像可在设置页自行选填。衣物照片仅用于识别与展示，不会对外公开。';
+  // #endif
+
   uni.showModal({
     title: '隐私政策',
-    content:
-      '登录时仅获取微信账号标识（openid）用于识别你的账号；不读取昵称、头像、通讯录等其它信息。昵称与头像可在设置页自行选填。衣物照片仅用于识别与展示，不会对外公开。',
+    content,
     showCancel: false,
     confirmText: '我知道了',
   });
@@ -192,6 +360,59 @@ function showPrivacy() {
 }
 .btn--busy {
   opacity: 0.6;
+}
+
+/* ── H5 邮箱登录表单 ── */
+.mailform {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+.mailform__input {
+  width: 100%;
+  height: 96rpx;
+  padding: 0 32rpx;
+  box-sizing: border-box;
+  border-radius: $zy-radius-pill;
+  background: #fff;
+  border: 2rpx solid $zy-line;
+  font-size: 30rpx;
+  color: $zy-ink;
+}
+.mailform__row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+/* 验证码输入占满剩余宽度，发送按钮固定宽度不被挤压 */
+.mailform__input--code {
+  flex: 1;
+  min-width: 0;
+}
+.mailform__send {
+  flex: 0 0 auto;
+  height: 96rpx;
+  padding: 0 32rpx;
+  border-radius: $zy-radius-pill;
+  border: 2rpx solid $zy-accent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  color: $zy-accent;
+  white-space: nowrap;
+}
+/* 冷却中 / 请求中：视觉弱化，点击由脚本层拦截 */
+.mailform__send--dis {
+  opacity: 0.45;
+  border-color: $zy-ink-3;
+  color: $zy-ink-3;
+}
+.mailform__hint {
+  font-size: 22rpx;
+  color: $zy-ink-3;
+  text-align: center;
 }
 .agree {
   font-size: 22rpx;

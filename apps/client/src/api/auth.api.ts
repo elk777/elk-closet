@@ -34,3 +34,27 @@ export function wxLogin(code: string) {
 export function fetchMe() {
   return http.get<User>('/auth/me');
 }
+
+// #ifndef MP-WEIXIN
+/**
+ * 发送邮箱验证码（H5 登录第一步）。
+ *
+ * 后端返回 204 无响应体，故泛型用 void。
+ * 用条件编译包裹：小程序端没有邮箱登录入口，这些函数若一并打进包，
+ * 虽不会被调用，但会让产物体积无谓增长、也给读代码的人错误暗示。
+ * @param email 收件邮箱
+ */
+export function sendEmailCode(email: string) {
+  return http.post<void>('/auth/email/send-code', { email });
+}
+
+/**
+ * 邮箱验证码登录（H5 登录第二步），首次登录即注册。
+ * 返回结构与 wxLogin 完全一致，故复用 LoginResult。
+ * @param email 邮箱
+ * @param code 6 位验证码
+ */
+export function emailLogin(email: string, code: string) {
+  return http.post<LoginResult>('/auth/email/verify', { email, code });
+}
+// #endif
