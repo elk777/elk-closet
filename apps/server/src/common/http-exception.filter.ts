@@ -52,12 +52,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   /**
    * 提取可展示给用户的错误信息。
-   * ValidationPipe 的错误 message 是数组，取第一条最具体的提示。
+   *
+   * 分三类处理：
+   * - 未预期的非 HttpException → 500「服务异常」，细节只进日志不外泄
+   * - 显式抛出的 HttpException（含 5xx）→ **用它自己的文案**。5xx 里也有
+   *   「邮箱登录暂未启用」这类用户该看到的功能性提示，一律替换成「服务异常」
+   *   会让用户无从判断是网络问题还是功能没开
+   * - ValidationPipe 的 message 是数组 → 取第一条最具体的提示
+   * @param exception 捕获到的异常
+   * @param status HTTP 状态码（保留参数便于将来按状态细分）
    */
   private resolveMessage(exception: unknown, status: number): string {
-    if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
-      return '服务异常，请稍后再试';
-    }
     if (exception instanceof HttpException) {
       const res = exception.getResponse();
       if (typeof res === 'string') return res;
