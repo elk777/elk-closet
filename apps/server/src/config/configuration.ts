@@ -253,6 +253,28 @@ export const upyunConfig = registerAs(
 );
 
 /**
+ * 邮件配置（H5 邮箱验证码登录）。
+ *
+ * apiKey / from 可空：未配置时邮箱登录不可用，但服务正常启动。
+ * 判定「是否可用」由 MailService.isConfigured() 统一做，避免各处重复判空。
+ */
+export interface MailConfig {
+  apiKey: string;
+  /** 发件人，形如 `知衣 <noreply@example.com>`；须在 Resend 完成域名验证 */
+  from: string;
+}
+
+/**
+ * CORS 配置。
+ *
+ * origins 为空表示不限制来源（开发默认）；生产建议填具体域名。
+ * 前后端同域部署时（Nginx 反代 /api）无需配置，浏览器同源策略已生效。
+ */
+export interface CorsConfig {
+  origins: string[];
+}
+
+/**
  * 微信小程序配置。
  *
  * 允许为空字符串：H5 调试与本地开发走 dev-login，不需要微信凭证。
@@ -277,6 +299,25 @@ export const weatherConfig = registerAs(
   }),
 );
 
+export const mailConfig = registerAs(
+  'mail',
+  (): MailConfig => ({
+    apiKey: process.env.RESEND_API_KEY ?? '',
+    from: process.env.MAIL_FROM ?? '',
+  }),
+);
+
+export const corsConfig = registerAs(
+  'cors',
+  (): CorsConfig => ({
+    // 逗号分隔拆成数组并去掉空白项，容忍 `a.com, b.com` 这类书写
+    origins: (process.env.CORS_ORIGINS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  }),
+);
+
 /** 汇总所有 config 工厂，供 ConfigModule.forRoot 的 load 使用 */
 export const configFactories = [
   appConfig,
@@ -287,4 +328,6 @@ export const configFactories = [
   upyunConfig,
   wxConfig,
   weatherConfig,
+  mailConfig,
+  corsConfig,
 ];

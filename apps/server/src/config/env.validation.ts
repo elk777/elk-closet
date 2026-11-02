@@ -58,6 +58,17 @@ export const envSchema = z.object({
   WX_APPID: z.string().optional().default(''),
   WX_SECRET: z.string().optional().default(''),
 
+  // ── 邮件（H5 邮箱验证码登录）──
+  // 全部可选：未配置时服务照常启动，仅「邮箱登录」这条路返回 503。
+  // 这与 Redis 的降级策略一致——可选依赖挂掉不该拖垮主链路。
+  RESEND_API_KEY: z.string().optional().default(''),
+  MAIL_FROM: z.string().optional().default(''),
+
+  // ── CORS ──
+  // 逗号分隔的允许来源；留空表示不限制（开发默认）。
+  // 生产 H5 与后端同域部署时可留空，靠同源策略保护。
+  CORS_ORIGINS: z.string().optional().default(''),
+
   // ── 和风天气（今日推荐的天气输入）──
   // 全部可选：未配置时今日推荐按季节降级，不阻塞链路，故不强制非空。
   QWEATHER_API_HOST: z.string().optional().default(''),

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { AiModule } from './ai/ai.module';
@@ -15,7 +16,8 @@ import { HealthController } from './health/health.controller';
 /**
  * 根模块。
  *
- * 基建模块（全局）：配置（含启动即校验）、Prisma 数据访问、AI 能力。
+ * 基建模块（全局）：配置（含启动即校验）、Prisma 数据访问、Redis（验证码与限流）、
+ * AI 能力。
  * 业务模块：User / Auth / Upload / Garment（录入生命线）/ Recommend（今日推荐）
  *   / Outfit（穿搭日记）/ TryOn（AI 试穿）/ Category（用户级分类管理）。
  */
@@ -23,6 +25,7 @@ import { HealthController } from './health/health.controller';
   imports: [
     AppConfigModule,
     PrismaModule,
+    RedisModule,
     UserModule,
     AuthModule,
     AiModule,
