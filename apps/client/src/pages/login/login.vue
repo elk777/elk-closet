@@ -80,6 +80,12 @@
         >
           <text>{{ verifying ? '正在登录…' : '登录 / 注册' }}</text>
         </view>
+        <!-- 发码后才显示垃圾箱提示：提前显示等于给用户打预防针，
+             反而降低对邮件的信任；发完再提示才对应「没收到怎么办」的真实场景。
+             QQ/163 等国内邮箱对新域名发信较保守，验证码进垃圾箱是常见情况。 -->
+        <text v-if="codeSent" class="mailform__hint mailform__hint--spam">
+          没收到？请检查垃圾箱 / 广告邮件，并把发件人加入白名单
+        </text>
         <text class="mailform__hint">首次登录自动创建账号</text>
       </view>
       <!-- #endif -->
@@ -130,6 +136,8 @@ const sending = ref(false);
 const verifying = ref(false);
 /** 发码冷却剩余秒数，>0 时按钮禁用并显示倒计时 */
 const countdown = ref(0);
+/** 本次是否已成功发出验证码，用于展示「没收到看垃圾箱」提示 */
+const codeSent = ref(false);
 /** 倒计时定时器句柄，页面卸载时清理，避免切走后仍在跑 */
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -192,7 +200,10 @@ async function onSendCode() {
   sending.value = true;
   try {
     await sendEmailCode(addr);
+    // 只在请求成功返回后启动倒计时：失败（重试上限、发信异常、网络错误）
+    // 不应该锁住按钮，否则用户既没收到码又得干等 60 秒才能重试。
     startCountdown(60);
+    codeSent.value = true;
     uni.showToast({ title: '验证码已发送', icon: 'none' });
   } catch {
     // 请求器已按后端 message 弹出提示（限流/未启用等），此处不重复
@@ -413,6 +424,12 @@ function showPrivacy() {
   font-size: 22rpx;
   color: $zy-ink-3;
   text-align: center;
+}
+/* 用 ink-2 而非 ink-3：这条是「没收到怎么办」的补救指引，用户得能读清；
+   但也不用 danger 色——它不是错误，只是常见情况的提示，报警感会过头 */
+.mailform__hint--spam {
+  color: $zy-ink-2;
+  line-height: 1.6;
 }
 .agree {
   font-size: 22rpx;
