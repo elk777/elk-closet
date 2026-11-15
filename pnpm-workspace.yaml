@@ -2,23 +2,43 @@ packages:
   - "apps/*"
   - "packages/*"
 
-allowBuilds:
-  sharp: true
-
-# 允许执行构建脚本的依赖白名单（pnpm 9+ 默认拦截所有 postinstall 脚本以防供应链攻击）
+# 允许执行安装脚本的依赖白名单（pnpm 默认拦截所有 preinstall/install/postinstall 以防供应链攻击）
+# allowBuilds 是 pnpm 10.13+/11 的权威字段；onlyBuiltDependencies 是旧字段，
+# 两个都保留是为了兼容服务器与本地可能存在的不同 pnpm 大版本：
+# pnpm 11 若只认 allowBuilds，旧清单里多出来的包会被判为「未批准」而直接抛
+# ERR_PNPM_IGNORED_BUILDS（strictDepBuilds 默认开启），故两份清单必须完全一致。
+# 清单来源：扫 node_modules 里实际带 preinstall/install/postinstall 的包，缺一个都会在装依赖阶段报错。
 # @nestjs/core：脚本仅打印赞助提示，安全放行以消除告警
-# prisma / @prisma/*：需生成查询引擎与类型化 client，必须放行
+# prisma / @prisma/engines / @prisma/client：需生成查询引擎与类型化 client，必须放行，
+#   否则线上启动报 Query engine not found
 # esbuild：vite 编译刚需，必须放行
+# @parcel/watcher：chokidar 的文件监听原生模块，需下载预编译二进制
 # core-js / vue-demi：常见运行时依赖，安全放行
+# dotenv：pnpm 在不同版本下会对它的 prepare 类脚本发出批准请求，显式放行避免歧义
 # sharp：截图裁剪 + @imgly 抠图均依赖原生二进制（预编译包按平台落地），必须放行
 # onnxruntime-node：@imgly 背景移除的推理引擎，需原生二进制
+allowBuilds:
+  "@nestjs/core": true
+  "@parcel/watcher": true
+  "@prisma/client": true
+  "@prisma/engines": true
+  core-js: true
+  dotenv: true
+  esbuild: true
+  onnxruntime-node: true
+  prisma: true
+  sharp: true
+  vue-demi: true
+
 onlyBuiltDependencies:
   - "@nestjs/core"
-  - "sharp"
-  - "prisma"
-  - "@prisma/engines"
+  - "@parcel/watcher"
   - "@prisma/client"
-  - "esbuild"
+  - "@prisma/engines"
   - "core-js"
-  - "vue-demi"
+  - "dotenv"
+  - "esbuild"
   - "onnxruntime-node"
+  - "prisma"
+  - "sharp"
+  - "vue-demi"
