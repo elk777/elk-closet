@@ -49,7 +49,20 @@ echo "== 检查产物 =="
 fail=0
 [ -f "$ROOT/apps/server/dist/main.js" ] || { echo "❌ 缺 apps/server/dist/main.js"; fail=1; }
 [ -f "$ROOT/apps/client/dist/build/h5/index.html" ] || { echo "❌ 缺 H5 index.html"; fail=1; }
-[ -d "$ROOT/node_modules/.pnpm/prisma@7.8.0/node_modules/prisma/build" ] || echo "⚠️  Prisma 引擎目录不存在，迁移时会报 Query engine not found"
+# Prisma 引擎检查。
+# 注意 pnpm 的目录名带 peer 依赖哈希后缀（prisma@7.8.0_@types+react@...），
+# 写死 prisma@7.8.0 会永远匹配不到，误报「引擎不存在」。
+# 另外 Prisma 7 用 prisma-client generator + driver adapter，查询走 WASM，
+# 不再有 query-engine 二进制；真正需要的是迁移用的 schema-engine。
+if ! ls -d "$ROOT"/node_modules/.pnpm/prisma@*/node_modules/prisma/build >/dev/null 2>&1; then
+  echo "⚠️  找不到 prisma/build 目录，prisma generate 可能未成功"
+elif ! ls "$ROOT"/node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null 2>&1; then
+  echo "⚠️  找不到 schema-engine，迁移会失败（重跑 pnpm install 或 pnpm rebuild @prisma/engines）"
+elif [ ! -f "$ROOT/apps/server/src/generated/prisma/client.ts" ]; then
+  echo "⚠️  未生成 Prisma Client（缺 apps/server/src/generated/prisma/client.ts）"
+else
+  echo "✅ Prisma 引擎与 Client 就绪"
+fi
 
 if [ "$fail" -ne 0 ]; then
   echo ""
