@@ -189,7 +189,7 @@ elk-closet/
 
 - 🟢 Node.js ≥ 20
 - 🟠 pnpm ≥ 9
-- 🐳 Docker（起本地 PostgreSQL / Redis）
+- 🐳 Docker 运行时（起本地 PostgreSQL / Redis）：Docker Desktop、OrbStack、Colima 均可
 - 💬 微信开发者工具（跑小程序端）
 - 🤖 一个 Anthropic 或 OpenAI 兼容的大模型网关（需支持多模态 vision）
 - ☁️ 又拍云存储空间（或自行替换为其他对象存储）
@@ -209,6 +209,8 @@ docker compose up -d
 ```
 
 > 💡 宿主机端口刻意错开为 **5433（pg）/ 6380（redis）**，避开常见占用。数据卷持久化，`docker compose down -v` 才会连数据一起删。
+>
+> 🍎 macOS 上用 **OrbStack** 时命令完全一致：`docker` / `docker compose` 由 OrbStack 提供的 CLI 接管，无需额外配置。若出现 `permission denied ... docker.sock`，说明终端进程没有访问 `~/.orbstack/run/docker.sock` 的权限（常见于沙箱化的 IDE 终端），在普通终端重跑即可。
 
 ### 3️⃣ 构建共享包 + 生成 Prisma Client
 
