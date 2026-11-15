@@ -62,7 +62,8 @@ export class EmailCodeService {
    *
    * 顺序有讲究：**先占限流位，再发信**。
    * 反过来的话，发信成功后若限流写入失败，用户可无限刷；而先占位再发信，
-   * 最坏情况是「占了位但信没发出去」，用户等 60 秒重试即可，不会造成轰炸。
+   * 最坏情况是「占了位但信没发出去」。因此后续任一步失败都必须把**邮箱冷却位**
+   * 回滚掉，否则用户没收到码却要被罚等 60 秒，再点时直接 429。
    * @param email 收件邮箱（DTO 已校验格式并统一为小写）
    * @param ip 请求来源 IP，用于 IP 维度限流
    * @throws HttpException 429 触发限流；503 邮件服务未启用；500 发信失败
@@ -91,40 +92,55 @@ export class EmailCodeService {
       );
     }
 
-    // ── 限流：IP 维度（按不同邮箱数）──
-    // 放在 email 冷却之后：同一邮箱的重复发送已在上一步被拦掉，
-    // 走不到这里的统计，集合不会被同一邮箱刷大
-    const ipEmailCount = await this.redis.addToSetWithTtl(
-      KEY.rateIpEmails(ip),
-      email,
-      IP_WINDOW_SECONDS,
-    );
-    if (ipEmailCount > IP_HOURLY_EMAIL_LIMIT) {
-      throw new HttpException(
-        '当前网络发送次数过多，请稍后再试',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    // ── 生成并存储验证码 ──
-    // randomInt 走 CSPRNG，padStart 保证「000123」这类也不丢前导零
-    const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-    await this.redis.setex(KEY.code(email), code, CODE_TTL_SECONDS);
-
-    // ── 发信 ──
+    // 冷却位已占，之后任何一步失败都要把它还回去。
+    // 用 sent 标记而不是在每个 catch 里各删一次：漏一条分支就会出现
+    // 「没收到码却要等 60 秒」的现象，收敛成一处不容易再漏。
+    let sent = false;
     try {
+      // ── 限流：IP 维度（按不同邮箱数）──
+      // 放在 email 冷却之后：同一邮箱的重复发送已在上一步被拦掉，
+      // 走不到这里的统计，集合不会被同一邮箱刷大
+      const ipEmailCount = await this.redis.addToSetWithTtl(
+        KEY.rateIpEmails(ip),
+        email,
+        IP_WINDOW_SECONDS,
+      );
+      if (ipEmailCount > IP_HOURLY_EMAIL_LIMIT) {
+        throw new HttpException(
+          '当前网络发送次数过多，请稍后再试',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      // ── 生成并存储验证码 ──
+      // randomInt 走 CSPRNG，padStart 保证「000123」这类也不丢前导零
+      const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      await this.redis.setex(KEY.code(email), code, CODE_TTL_SECONDS);
+
+      // ── 发信 ──
       await this.mail.sendVerificationCode(email, code);
+      sent = true;
       this.logger.log('验证码邮件已发送');
     } catch (err) {
-      // 发信失败要回滚验证码：否则用户没收到码，却能看到「已发送」，
-      // 且残留的码会在 10 分钟内占住一次校验机会
-      await this.redis.del(KEY.code(email));
+      // 验证码要删：否则残留的码会在 10 分钟内占住一次校验机会。
+      // 回滚失败不能盖掉原始错误，否则用户看到的提示会变成 Redis 故障。
+      await this.redis.del(KEY.code(email)).catch(() => undefined);
+      // HttpException 原样抛出：IP 超额是 429，重包装成 500 会让前端
+      // 显示「服务异常」而不是「发送次数过多」，也丢掉了限流语义。
+      if (err instanceof HttpException) throw err;
       throw err instanceof MailSendError
         ? new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR)
         : new HttpException(
             '验证码发送失败，请稍后重试',
             HttpStatus.INTERNAL_SERVER_ERROR,
           );
+    } finally {
+      // 没发出去就把 60 秒冷却还回去，用户可立即重试。
+      // IP 集合不回滚：它按不同邮箱去重，本次计入也只占 1 格；
+      // 而删掉已在集合里的历史邮箱会让额度被低估。
+      if (!sent) {
+        await this.redis.del(KEY.rateEmail(email)).catch(() => undefined);
+      }
     }
   }
 
