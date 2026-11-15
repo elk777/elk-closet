@@ -56,6 +56,13 @@ function request<T>(opts: FullOptions): Promise<T> {
         // HTTP 状态码只需落在 2xx 成功区间——NestJS 的 POST 默认返回 201，
         // 若只认 200 会把所有 POST 误判为失败。
         const httpOk = res.statusCode >= 200 && res.statusCode < 300;
+        // 204 按 HTTP 语义就没有响应体（如发验证码），此时不存在可解的信封。
+        // 早期版本一律要求 body.code===0，导致 204 被误判为失败——用户看到报错，
+        // 实际后端已发信成功，再点时又会撞上真实冷却拿到 429。
+        if (httpOk && res.statusCode === 204) {
+          resolve(undefined as T);
+          return;
+        }
         if (httpOk && body && isApiSuccess(body)) {
           resolve(body.data);
           return;
