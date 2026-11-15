@@ -15,7 +15,9 @@ ROOT="$(pwd)"
 H5_DIR="${H5_DIR:-/www/wwwroot/elk-zhiyi/zhiyi-h5}"
 
 echo "== 1/5 拉取代码 =="
-git pull origin feat/h5
+# 用 pull-code.sh 而不是直接 git pull：国内服务器直连 GitHub 常失败，
+# 脚本会自动切镜像重试
+bash "$ROOT/scripts/pull-code.sh"
 
 echo ""
 echo "== 2/5 安装依赖 =="
